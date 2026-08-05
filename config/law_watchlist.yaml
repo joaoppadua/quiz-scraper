@@ -1,0 +1,28 @@
+# Law / jurisprudence changes that can invalidate an older question's official answer.
+#
+# The professor maintains this file. An entry fires when a question's exam_year is
+# earlier than `effective` AND the question is classified into one of `affects`;
+# the entry text is then injected into the vetting prompt.
+#
+# Note this is load-bearing for the M1 corpus: every oab_exams item is from 2010-2018,
+# i.e. entirely before the Pacote Anticrime.
+watchlist:
+  - id: pacote-anticrime
+    change: >
+      Lei 13.964/2019 (Pacote Anticrime): rewrote prisão preventiva (arts. 311–316 CPP),
+      created juiz das garantias, ANPP (art. 28-A CPP), changed cadeia de custódia
+      (arts. 158-A ff.)
+    effective: 2020-01-23
+    affects: [T1.1, T1.2, T1.4, T2.4, T3.4, T3.5]
+
+  - id: execucao-provisoria-pena
+    change: >
+      STF ADCs 43/44/54 (2019): execução da pena só após trânsito em julgado
+    effective: 2019-11-07
+    affects: [T4.1, T4.2, T4.3]
+
+  - id: juiz-garantias-vigencia
+    change: >
+      STF ADIs 6.298 ff. (2023): juiz das garantias — implementation rules and deadlines
+    effective: 2023-08-24
+    affects: [T2.1, T2.2, T2.4]
