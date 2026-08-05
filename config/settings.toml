@@ -1,0 +1,32 @@
+[paths]
+data_dir      = "data"
+raw_dir       = "data/raw"
+db_path       = "data/corpus.sqlite"
+export_dir    = "data/export"
+shortlist_dir = "shortlists"
+
+[llm]
+# Model ids drift fast — they live here, never as literals in code.
+# Gemini GA line as of 2026-08. Swap `strong_model` to "gemini-3.1-pro-preview"
+# for Pro-tier vetting if you accept preview rate limits and deprecation notice.
+backend          = "gemini"
+fallback_backend = "openai"      # "" to disable fallback
+fast_model       = "gemini-3.5-flash-lite"
+strong_model     = "gemini-3.6-flash"
+fallback_fast_model   = "gpt-5.4-mini"
+fallback_strong_model = "gpt-5.5"
+max_attempts     = 3
+max_tokens       = 2048
+requests_per_second = 2.0
+
+[ranking]
+# Open formats fit the teaching method best: the professor resolves the question
+# with the class, so a discursive item gives more to work with than an MCQ.
+format_weights = { dissertativa = 3.0, certo_errado = 2.0, mcq5 = 1.0, mcq4 = 1.0, peca = 0.0 }
+vet_ok_bonus       = 2.0
+rationale_bonus    = 1.5
+year_weight        = 0.05
+shortlist_size     = 5
+
+[harvest]
+user_agent = "banco-questoes-pp/0.1 (UFF Faculdade de Direito; teaching corpus; contact: jpcvpadua@gmail.com)"

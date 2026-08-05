@@ -1,0 +1,41 @@
+# Canonical subtopic taxonomy for Processo Penal 2 (UFF), semester 2026.2.
+# Mirrors the "Conteúdo programático" of the course. Subtopic ids are stable keys
+# used everywhere: database, prompts, shortlist filenames. Labels stay in pt-BR.
+#
+# The professor maintains this file. Adding a subtopic is safe; renaming an id is not
+# (it orphans usage_log rows and existing shortlists).
+discipline: direito-processual-penal
+topics:
+  - id: T1
+    label: "Medidas cautelares pessoais"
+    subtopics:
+      - {id: T1.1, label: "Princípios e marco regulatório das medidas cautelares"}
+      - {id: T1.2, label: "Prisão preventiva e medidas cautelares diversas da prisão (art. 319 do CPP)"}
+      - {id: T1.3, label: "Prisão temporária"}
+      - {id: T1.4, label: "Prisão em flagrante e audiência de custódia"}
+  - id: T2
+    label: "Processo e procedimento"
+    subtopics:
+      - {id: T2.1, label: "Conceito de processo e pressupostos processuais"}
+      - {id: T2.2, label: "Nulidades e defeitos dos atos processuais"}
+      - {id: T2.3, label: "Conceito de procedimento; tipos de procedimento/ritos"}
+      - {id: T2.4, label: "Procedimento comum: denúncia, citação e resposta à acusação"}
+      - {id: T2.5, label: "Procedimento comum: absolvição sumária e saneamento (arts. 397 e 399 do CPP)"}
+      - {id: T2.6, label: "Procedimento comum: audiência de instrução e julgamento (AIJ)"}
+      - {id: T2.7, label: "Procedimento comum: sentença"}
+      - {id: T2.8, label: "Tribunal do júri: generalidades"}
+      - {id: T2.9, label: "Tribunal do júri: procedimento e plenário"}
+  - id: T3
+    label: "Prova"
+    subtopics:
+      - {id: T3.1, label: "Objetivos e erros do processo penal"}
+      - {id: T3.2, label: "Ônus da prova"}
+      - {id: T3.3, label: "Regimes de avaliação da prova e standards probatórios"}
+      - {id: T3.4, label: "Provas em espécie"}
+      - {id: T3.5, label: "Ilicitude da prova"}
+  - id: T4
+    label: "Recursos e habeas corpus"
+    subtopics:
+      - {id: T4.1, label: "\"Teoria\" dos recursos no processo penal"}
+      - {id: T4.2, label: "Recursos em espécie no processo penal"}
+      - {id: T4.3, label: "Habeas corpus: cabimento, natureza jurídica, legitimidade, competência, estrutura"}
