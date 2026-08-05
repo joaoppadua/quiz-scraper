@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import yaml
@@ -79,7 +79,7 @@ def _resolve(root: Path, value: str) -> Path:
     return p if p.is_absolute() else root / p
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_settings(path: Path | None = None) -> Settings:
     path = path or CONFIG_DIR / "settings.toml"
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -96,7 +96,7 @@ def load_settings(path: Path | None = None) -> Settings:
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_taxonomy(path: Path | None = None) -> Taxonomy:
     path = path or CONFIG_DIR / "taxonomy.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))

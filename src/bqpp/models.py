@@ -22,7 +22,7 @@ def source_doc_id(payload: bytes) -> str:
 
 def question_id(source_doc_id: str, question_number: str) -> str:
     """Deterministic id for a question: sha256(source_doc_id + question_number)."""
-    return hashlib.sha256(f"{source_doc_id}:{question_number}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{source_doc_id}:{question_number}".encode()).hexdigest()
 
 
 class SourceDocument(BaseModel):

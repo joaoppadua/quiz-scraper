@@ -22,11 +22,11 @@ def db(tmp_path):
 
 
 def _q(qid="q1", **over):
-    base = dict(
-        id=qid, source_doc_id="d", question_number="1", format="mcq4", stem="s",
-        choices=[{"label": "A", "text": "a"}], answer_key="A",
-        discipline="direito-processual-penal", subtopic_ids=["T1.2"],
-    )
+    base = {
+        "id": qid, "source_doc_id": "d", "question_number": "1", "format": "mcq4",
+        "stem": "s", "choices": [{"label": "A", "text": "a"}], "answer_key": "A",
+        "discipline": "direito-processual-penal", "subtopic_ids": ["T1.2"],
+    }
     return Question(**{**base, **over})
 
 

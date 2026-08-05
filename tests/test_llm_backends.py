@@ -142,3 +142,11 @@ def test_factory_rejects_unknown_backend():
     bad.llm.backend = "cohere"
     with pytest.raises(ValueError, match="cohere"):
         build_client(bad)
+
+
+def test_missing_api_key_gives_an_actionable_error(monkeypatch):
+    from bqpp.llm.base import LLMError
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(LLMError, match=r"\.env"):
+        GeminiBackend(api_key=None, fast_model="f", strong_model="s")

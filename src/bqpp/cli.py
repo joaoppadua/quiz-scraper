@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -19,18 +19,31 @@ app = typer.Typer(
 )
 console = Console()
 
-DbOpt = Annotated[Optional[Path], typer.Option("--db", help="Override the configured SQLite path")]
+DbOpt = Annotated[Path | None, typer.Option("--db", help="Override the configured SQLite path")]
 Verbose = Annotated[bool, typer.Option("-v", "--verbose", help="Verbose logging")]
 DryRun = Annotated[bool, typer.Option("--dry-run", help="Do everything except write")]
 Force = Annotated[bool, typer.Option("--force", help="Redo work that is already done")]
 
 
-def _open_db(db_path: Optional[Path]) -> Database:
+def _open_db(db_path: Path | None) -> Database:
     settings = load_settings()
     settings.ensure_dirs()
     db = Database.connect(db_path or settings.db_path)
     db.init_schema()
     return db
+
+
+def _build_client_or_exit(database: Database):
+    """A missing API key is a config mistake, not a crash — report it and stop."""
+    from bqpp.llm.base import LLMError
+    from bqpp.llm.factory import build_client
+
+    try:
+        return build_client(load_settings(), db=database)
+    except (LLMError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        database.close()
+        raise typer.Exit(code=1) from None
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -81,7 +94,7 @@ def stats(db: DbOpt = None) -> None:
 
 @app.command()
 def harvest(
-    source: Annotated[Optional[str], typer.Option("--source", help="Only this source id")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Only this source id")] = None,
     db: DbOpt = None,
     dry_run: DryRun = False,
     force: Force = False,
@@ -114,7 +127,7 @@ def harvest(
 @app.command()
 def classify(
     only_unclassified: Annotated[bool, typer.Option("--only-unclassified")] = True,
-    limit: Annotated[Optional[int], typer.Option("--limit")] = None,
+    limit: Annotated[int | None, typer.Option("--limit")] = None,
     db: DbOpt = None,
     dry_run: DryRun = False,
     force: Force = False,
@@ -123,10 +136,9 @@ def classify(
     """LLM classification against the taxonomy (tier: fast)."""
     _setup_logging(verbose)
     from bqpp.classify import run_classify
-    from bqpp.llm.factory import build_client
 
     database = _open_db(db)
-    client = build_client(load_settings(), db=database)
+    client = _build_client_or_exit(database)
     n = run_classify(
         database, client, load_taxonomy(),
         only_unclassified=only_unclassified, limit=limit, dry_run=dry_run, force=force,
@@ -138,7 +150,7 @@ def classify(
 @app.command()
 def vet(
     only_unvetted: Annotated[bool, typer.Option("--only-unvetted")] = True,
-    limit: Annotated[Optional[int], typer.Option("--limit")] = None,
+    limit: Annotated[int | None, typer.Option("--limit")] = None,
     db: DbOpt = None,
     dry_run: DryRun = False,
     force: Force = False,
@@ -146,11 +158,10 @@ def vet(
 ) -> None:
     """Rule + LLM vetting (tier: strong)."""
     _setup_logging(verbose)
-    from bqpp.llm.factory import build_client
     from bqpp.vet import load_watchlist, run_vet
 
     database = _open_db(db)
-    client = build_client(load_settings(), db=database)
+    client = _build_client_or_exit(database)
     n = run_vet(
         database, client, load_watchlist(),
         only_unvetted=only_unvetted, limit=limit, dry_run=dry_run, force=force,
@@ -163,7 +174,7 @@ def vet(
 def curate(
     semester: Annotated[str, typer.Option("--semester", help='e.g. "2026.2"')],
     subtopics: Annotated[
-        Optional[str], typer.Option("--subtopics", help="Comma-separated ids; default all")
+        str | None, typer.Option("--subtopics", help="Comma-separated ids; default all")
     ] = None,
     db: DbOpt = None,
     dry_run: DryRun = False,
@@ -196,7 +207,7 @@ def use(
     question_id: str,
     semester: Annotated[str, typer.Option("--semester")],
     subtopic: Annotated[str, typer.Option("--subtopic")],
-    note: Annotated[Optional[str], typer.Option("--note")] = None,
+    note: Annotated[str | None, typer.Option("--note")] = None,
     db: DbOpt = None,
 ) -> None:
     """Record the professor's pick in the usage log."""

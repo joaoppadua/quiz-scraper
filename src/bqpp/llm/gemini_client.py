@@ -10,7 +10,7 @@ import os
 import time
 from typing import Any
 
-from bqpp.llm.base import LLMResponse, LLMTransientError, ModelTier
+from bqpp.llm.base import LLMError, LLMResponse, LLMTransientError, ModelTier
 
 # Gemini's `response_schema` accepts a JSON-Schema *subset*; these keys are rejected.
 # OpenAI strict mode, by contrast, *requires* additionalProperties — so the schemas
@@ -44,7 +44,13 @@ class GeminiBackend:
         else:
             from google import genai
 
-            self._client = genai.Client(api_key=api_key or os.environ["GEMINI_API_KEY"])
+            key = api_key or os.getenv("GEMINI_API_KEY")
+            if not key:
+                raise LLMError(
+                    "GEMINI_API_KEY is not set. Copy .env.example to .env and fill it in, "
+                    "or switch [llm] backend in config/settings.toml."
+                )
+            self._client = genai.Client(api_key=key)
 
     def generate_json(
         self,

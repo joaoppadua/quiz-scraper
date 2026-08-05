@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import jsonschema
@@ -99,7 +99,7 @@ class LLMClient:
         if self.db is None:
             return
         self.db.log_llm_call(
-            called_at=datetime.now(timezone.utc).isoformat(),
+            called_at=datetime.now(UTC).isoformat(),
             stage=stage,
             backend=self.backend.name,
             model=getattr(resp, "model", None),

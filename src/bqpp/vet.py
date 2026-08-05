@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import yaml
@@ -111,7 +111,9 @@ def build_prompt(question: Question, entries: list[WatchlistEntry]) -> tuple[str
         block = ""
     user = (
         PROMPT_PATH.read_text(encoding="utf-8")
-        .replace("{current_year}", str(date.today().year))
+        # local wall-clock year is the right one here: the prompt asks "is this
+        # still correct today?" from the professor's calendar, not UTC's
+        .replace("{current_year}", str(date.today().year))  # noqa: DTZ011
         .replace("{watchlist_block}", block)
         .replace(
             "{question_json}",
@@ -182,7 +184,7 @@ def run_vet(
             vet_reasons=reasons,
             pedagogy_note=note,
             vet_model=client.backend.name,
-            vetted_at=datetime.now(timezone.utc).isoformat(),
+            vetted_at=datetime.now(UTC).isoformat(),
         )
         done += 1
     return done

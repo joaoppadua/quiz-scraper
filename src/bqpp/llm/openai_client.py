@@ -11,7 +11,7 @@ import os
 import time
 from typing import Any
 
-from bqpp.llm.base import LLMResponse, LLMTransientError, ModelTier
+from bqpp.llm.base import LLMError, LLMResponse, LLMTransientError, ModelTier
 
 
 class OpenAIBackend:
@@ -31,7 +31,13 @@ class OpenAIBackend:
         else:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
+            key = api_key or os.getenv("OPENAI_API_KEY")
+            if not key:
+                raise LLMError(
+                    "OPENAI_API_KEY is not set. Copy .env.example to .env and fill it in, "
+                    "or clear [llm] fallback_backend in config/settings.toml."
+                )
+            self._client = OpenAI(api_key=key)
 
     def generate_json(
         self,

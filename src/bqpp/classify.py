@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bqpp.config import PROJECT_ROOT, Taxonomy
 from bqpp.db import Database
@@ -118,7 +118,7 @@ def run_classify(
             difficulty=result["difficulty"],
             classified_note=result.get("note") or None,
             classify_model=client.backend.name,
-            classified_at=datetime.now(timezone.utc).isoformat(),
+            classified_at=datetime.now(UTC).isoformat(),
         )
         done += 1
     return done

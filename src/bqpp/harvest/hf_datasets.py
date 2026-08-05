@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,14 @@ def _choices_from_struct(raw: Any) -> list[dict[str, str]] | None:
     if isinstance(raw, list):  # already row-wise
         return [{"label": c["label"], "text": c["text"]} for c in raw]
     labels, texts = raw.get("label") or [], raw.get("text") or []
-    return [{"label": lab, "text": txt} for lab, txt in zip(labels, texts)] or None
+    if len(labels) != len(texts):
+        # A plain zip would silently drop the tail and produce a question whose
+        # alternatives don't match its gabarito. Refuse the row instead.
+        log.warning("choices mismatch: %d labels vs %d texts; skipping", len(labels), len(texts))
+        return None
+    return [
+        {"label": lab, "text": txt} for lab, txt in zip(labels, texts, strict=True)
+    ] or None
 
 
 def _exam_document(
@@ -39,7 +46,7 @@ def _exam_document(
     with a null year, silently disabling watchlist injection.
     """
     return SourceDocument(
-        id=source_doc_id(f"{parent.id}:{key}".encode("utf-8")),
+        id=source_doc_id(f"{parent.id}:{key}".encode()),
         source_id=parent.source_id,
         url=parent.url,
         fetched_at=parent.fetched_at,
@@ -224,7 +231,7 @@ def harvest_source(
         id=source_doc_id(digest.digest()),
         source_id=entry.id,
         url=f"https://huggingface.co/datasets/{dataset}",
-        fetched_at=datetime.now(timezone.utc).isoformat(),
+        fetched_at=datetime.now(UTC).isoformat(),
         kind="dataset",
         banca=p.get("banca"),
         carreira=p.get("carreira"),

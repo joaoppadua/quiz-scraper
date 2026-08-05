@@ -7,7 +7,7 @@ and the professor chooses.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bqpp.config import RankingSettings, Settings, Taxonomy
 from bqpp.db import Database
@@ -61,7 +61,7 @@ def render_shortlist(
     out = [
         f"# {subtopic_id} — {label}",
         "",
-        f"Semestre **{semester}** · gerado em {datetime.now(timezone.utc).date().isoformat()}",
+        f"Semestre **{semester}** · gerado em {datetime.now(UTC).date().isoformat()}",
         "",
         "> Escolha uma questão e registre com o comando indicado ao final de cada entrada.",
         "",
@@ -70,8 +70,10 @@ def render_shortlist(
         out += [
             "## Nenhum candidato",
             "",
-            "Nenhuma questão vetada foi classificada neste subtópico. "
-            "Amplie o corpus (M2/M3) ou revise a taxonomia.",
+            (
+                "Nenhuma questão vetada foi classificada neste subtópico. "
+                "Amplie o corpus (M2/M3) ou revise a taxonomia."
+            ),
             "",
         ]
         return "\n".join(out)
@@ -163,7 +165,7 @@ def record_use(
             question_id=question_id,
             semester=semester,
             subtopic_id=subtopic,
-            used_at=datetime.now(timezone.utc).isoformat(),
+            used_at=datetime.now(UTC).isoformat(),
             note=note,
         )
     )

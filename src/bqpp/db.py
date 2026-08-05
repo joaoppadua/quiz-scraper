@@ -48,7 +48,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
 
     @classmethod
-    def connect(cls, path: Path) -> "Database":
+    def connect(cls, path: Path) -> Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path)
         conn.execute("PRAGMA journal_mode=WAL")
