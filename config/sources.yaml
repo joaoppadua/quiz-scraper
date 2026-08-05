@@ -1,0 +1,38 @@
+# Source registry. Priority order per spec §6:
+#   HF structured datasets (bootstrap, M1) -> FGV/OAB PDFs (M2) -> Cebraspe (M3) -> MP/TJ pages (M3)
+#
+# Only public, official (or officially mirrored) sources. No commercial aggregators.
+#
+# The filter values below were verified against the live datasets on 2026-08-05 and
+# differ from the spec draft — see docs/superpowers/plans/ for the correction table.
+sources:
+  - id: hf-oab-exams
+    adapter: hf_datasets
+    dataset: eduagarcia/oab_exams
+    config: default
+    split: train
+    # The column is `question_type`; values are UPPER-HYPHEN codes, not prose.
+    # CRIMINAL is kept alongside CRIMINAL-PROCEDURE because many CRIMINAL items turn
+    # on procedural reasoning; the classify stage decides discipline, not this filter.
+    question_type_filter: ["CRIMINAL-PROCEDURE", "CRIMINAL"]
+    banca: FGV
+    carreira: oab
+    notes: >
+      Bootstrap source. 2,210 rows total, 177 in the criminal slice, exams 2010-2018.
+      Every item predates the Pacote Anticrime (2020-01-23), so the law watchlist in
+      the vetting stage is load-bearing for this source.
+
+  - id: hf-oab-bench
+    adapter: hf_datasets
+    dataset: maritaca-ai/oab-bench
+    config: questions
+    guidelines_config: guidelines
+    split: train
+    # `category` is "{exam_number}_{discipline}", e.g. "39_direito_penal".
+    category_suffix_filter: ["direito_penal"]
+    banca: FGV
+    carreira: oab
+    notes: >
+      Discursive bootstrap, 30 penal rows (OAB 2a fase). Official examiner guidelines
+      live in a separate `guidelines` config, joined on question_id, and land in
+      answer_rationale. Check the dataset licence before redistributing.

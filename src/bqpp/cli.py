@@ -34,10 +34,13 @@ def _open_db(db_path: Optional[Path]) -> Database:
 
 
 def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    """-v raises verbosity for our own loggers only.
+
+    Root DEBUG would drown the run in httpcore/filelock/urllib3 chatter during a
+    harvest, which is exactly when someone reaches for -v.
+    """
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("bqpp").setLevel(logging.DEBUG if verbose else logging.INFO)
 
 
 @app.command()

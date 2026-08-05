@@ -1,0 +1,74 @@
+[
+ {
+  "id": "2010-01_91",
+  "question_number": 91,
+  "exam_id": "2010-01",
+  "exam_year": "2010",
+  "question_type": "CRIMINAL-PROCEDURE",
+  "nullified": false,
+  "question": "Admite-se a suspensão condicional da pena (sursis)",
+  "choices": {
+   "text": [
+    "em casos de condenação a pena restritiva de direito ou privativa de liberdade, desde que não superior a quatro anos.",
+    "a reincidente em crime doloso, desde que a condenação anterior tenha sido exclusivamente à pena de multa.",
+    "para o condenado que, na data do fato, tenha idade acima de setenta anos, desde que a pena não seja superior a dois anos.",
+    "para o condenado em estado de saúde grave ou portador de doença incurável, desde que ele tenha reparado o dano."
+   ],
+   "label": [
+    "A",
+    "B",
+    "C",
+    "D"
+   ]
+  },
+  "answerKey": "B"
+ },
+ {
+  "id": "2010-01_85",
+  "question_number": 85,
+  "exam_id": "2010-01",
+  "exam_year": "2010",
+  "question_type": "CRIMINAL",
+  "nullified": true,
+  "question": "No que se refere às penas restritivas de direitos e à de multa, assinale a opção correta.",
+  "choices": {
+   "text": [
+    "Se o condenado for reincidente, o juiz não poderá aplicar a substituição da pena privativa de liberdade, apesar de, em face de condenação anterior, a medida ser socialmente recomendável e a reincidência não se ter operado em virtude da prática do mesmo crime.",
+    "A prestação de serviços à comunidade ou a entidades públicas consiste na atribuição de tarefas gratuitas ao condenado, sendo aplicável às condenações superiores a seis meses de privação da liberdade, atendidos os demais requisitos legais.",
+    "A limitação de fim de semana consiste na obrigação de permanência, aos sábados, domingos e feriados, por oito horas diárias, em casa de albergado ou em outro estabelecimento adequado.",
+    "A pena de multa consiste no pagamento, ao fundo penitenciário, da quantia determinada na sentença e calculada em dias-multa, sendo, no mínimo, de dez e, no máximo, de trezentos e sessenta e cinco dias-multa, a ser fixada pelo juiz, não podendo ser inferior a um trigésimo do maior salário mínimo mensal vigente ao tempo do fato, nem superior a cinco vezes esse salário."
+   ],
+   "label": [
+    "A",
+    "B",
+    "C",
+    "D"
+   ]
+  },
+  "answerKey": "B"
+ },
+ {
+  "id": "2010-01_1",
+  "question_number": 1,
+  "exam_id": "2010-01",
+  "exam_year": "2010",
+  "question_type": "ETHICS",
+  "nullified": false,
+  "question": "Júlio e Lauro constituíram o mesmo advogado para, juntos, ajuizarem ação de interesse comum. No curso do processo, sobrevieram conflitos de interesse entre os constituintes, tendo Júlio deixado de concordar com Lauro com relação aos pedidos.\nNessa situação hipotética, deve o advogado",
+  "choices": {
+   "text": [
+    "optar, com prudência e discernimento, por um dos mandatos, e renunciar ao outro, resguardando o sigilo profissional.",
+    "manter com os constituintes contrato de prestação de serviços jurídicos no interesse da causa, resguardando o sigilo profissional.",
+    "assumir, com a cautela que lhe é peculiar, o patrocínio de ambos, em ações individuais.",
+    "designar, com prudência e cautela, por substabelecimento com reservas, um advogado de sua confiança."
+   ],
+   "label": [
+    "A",
+    "B",
+    "C",
+    "D"
+   ]
+  },
+  "answerKey": "A"
+ }
+]
