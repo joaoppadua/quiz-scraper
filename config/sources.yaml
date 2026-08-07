@@ -32,6 +32,21 @@ sources:
     category_suffix_filter: ["direito_penal"]
     banca: FGV
     carreira: oab
+    # The dataset carries no year column, so the year is supplied here or the law
+    # watchlist can never fire for this source (spec §10.1).
+    #
+    # These are the dates the *2ª fase* was actually applied, which is what the
+    # watchlist rule means by "when the question was written" — not the year the
+    # exame is colloquially named after. The two diverge: the 39º EOU sat its 1ª
+    # fase in Dec/2023 but its prova prático-profissional in Jan/2024.
+    # Extend this as new exams are harvested.
+    exam_years:
+      39: 2024   # 2ª fase 21/01/2024
+      40: 2024   # 2ª fase 19/05/2024
+      41: 2024   # 2ª fase 22/09/2024
+      42: 2025   # 2ª fase 16/02/2025
+      43: 2025   # 2ª fase 15/06/2025
+      44: 2025   # 2ª fase 19/10/2025
     notes: >
       Discursive bootstrap, 30 penal rows (OAB 2a fase). Official examiner guidelines
       live in a separate `guidelines` config, joined on question_id, and land in

@@ -142,11 +142,14 @@ def ingest_oab_bench(
     db: Database,
     force: bool = False,
     category_suffix_filter: list[str] | None = None,
+    exam_years: dict | None = None,
 ) -> int:
     suffixes = tuple(category_suffix_filter or ["direito_penal"])
     guidelines = {
         g["question_id"]: g for g in guideline_rows if g.get("model_id") == "guidelines"
     }
+    # YAML gives int keys for `39:`; category gives the string "39".
+    years = {str(k): v for k, v in (exam_years or {}).items()}
     seen_exams: dict[str, SourceDocument] = {}
     written = 0
     for row in question_rows:
@@ -155,13 +158,21 @@ def ingest_oab_bench(
         qid_raw = row["question_id"]
         is_peca = qid_raw.endswith("peca_profissional")
 
-        # category is "{exam_number}_{discipline}". The dataset carries no year
-        # column, so exam_year stays null and the watchlist simply isn't injected
-        # for these — they are recent 2a-fase items where that matters least.
+        # category is "{exam_number}_{discipline}". The dataset has no year column,
+        # so it comes from the `exam_years` map in sources.yaml; an exam missing
+        # from that map gets a null year and is silently skipped by the watchlist,
+        # so log it rather than let coverage drop quietly.
         exam_no = row["category"].split("_", 1)[0]
         if exam_no not in seen_exams:
+            year = years.get(exam_no)
+            if year is None:
+                log.warning(
+                    "no exam_years entry for OAB %s — its questions will be vetted "
+                    "without watchlist injection; add it to config/sources.yaml",
+                    exam_no,
+                )
             exam_doc = _exam_document(
-                doc, certame=f"OAB {exam_no}º Exame (2ª fase)", exam_year=None, key=exam_no
+                doc, certame=f"OAB {exam_no}º Exame (2ª fase)", exam_year=year, key=exam_no
             )
             db.upsert_source_document(exam_doc, force=force)
             seen_exams[exam_no] = exam_doc
@@ -249,6 +260,7 @@ def harvest_source(
         return ingest_oab_bench(
             rows, _read_rows(g_paths), source_id=entry.id, doc=doc, db=db, force=force,
             category_suffix_filter=p.get("category_suffix_filter"),
+            exam_years=p.get("exam_years"),
         )
     return ingest_oab_exams(
         rows, source_id=entry.id, doc=doc, db=db, force=force,

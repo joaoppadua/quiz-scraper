@@ -93,11 +93,37 @@ def test_oab_bench_registers_per_exam_provenance(db):
     ingest_oab_bench(
         payload["questions"], payload["guidelines"],
         source_id="hf-oab-bench", doc=doc, db=db,
+        exam_years={39: 2024},  # YAML hands us int keys; category gives "39"
     )
     for q in db.iter_questions():
         src = db.get_source_document(q.source_doc_id)
         assert src.certame == "OAB 39º Exame (2ª fase)"
-        assert src.exam_year is None  # no year column in this dataset
+        assert src.exam_year == 2024
+
+
+def test_oab_bench_exam_without_a_configured_year_stays_null(db):
+    """Missing config must not become a wrong year — null disables watchlist
+    injection, which is recoverable; a guessed year silently corrupts vetting."""
+    payload = _bench_payload()
+    doc = _doc("hf-oab-bench")
+    db.upsert_source_document(doc)
+    ingest_oab_bench(
+        payload["questions"], payload["guidelines"],
+        source_id="hf-oab-bench", doc=doc, db=db, exam_years={99: 2030},
+    )
+    for q in db.iter_questions():
+        assert db.get_source_document(q.source_doc_id).exam_year is None
+
+
+def test_every_harvested_oab_bench_exam_has_a_configured_year():
+    """The real config must cover every exam the corpus actually contains, or
+    those questions are vetted with no watchlist block at all."""
+    from bqpp.harvest.registry import load_sources
+
+    entry = next(e for e in load_sources() if e.id == "hf-oab-bench")
+    years = {str(k): v for k, v in (entry.params.get("exam_years") or {}).items()}
+    assert years, "hf-oab-bench has no exam_years map"
+    assert all(isinstance(v, int) and 2009 < v < 2030 for v in years.values())
 
 
 def test_oab_bench_joins_guidelines_and_tags_peca(db):
