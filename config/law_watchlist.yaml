@@ -26,3 +26,38 @@ watchlist:
       STF ADIs 6.298 ff. (2023): juiz das garantias — implementation rules and deadlines
     effective: 2023-08-24
     affects: [T2.1, T2.2, T2.4]
+
+  - id: lei-15272-2025-preventiva
+    change: >
+      Lei 15.272/2025: inseriu no CPP circunstâncias que recomendam a conversão do
+      flagrante em preventiva e exigência de decisão motivada sobre elas (art. 310,
+      §§ 5º e 6º); parâmetros de aferição da periculosidade do agente para a
+      preventiva, vedada a gravidade abstrata do delito como fundamento isolado
+      (art. 312, §§ 3º e 4º); e coleta de material biológico para identificação do
+      perfil genético do custodiado, com cadeia de custódia (art. 310-A)
+    effective: 2025-11-27
+    affects: [T1.1, T1.2, T1.4, T3.4]
+
+  - id: lei-15280-2025-protetivas
+    change: >
+      Lei 15.280/2025 (crimes contra a dignidade sexual): criou o Título IX-A do CPP,
+      com rol de medidas protetivas de urgência aplicáveis desde a fase investigatória
+      a qualquer crime cuja vítima esteja em situação de vulnerabilidade (arts. 350-A
+      e 350-B), replicando no CPP a arquitetura da Lei Maria da Penha; e tornou
+      obrigatória a identificação do perfil genético do investigado preso
+      cautelarmente e do condenado por esses crimes (art. 300-A)
+    effective: 2025-12-08
+    affects: [T1.1, T1.2, T3.4]
+
+  - id: lei-15358-2026-antifaccao
+    change: >
+      Lei 15.358/2026 (Lei Antifacção): audiência de custódia em 24h e por
+      videoconferência como regra, com entrevista prévia e reservada com a defesa e
+      repetição do ato em caso de falha técnica (arts. 3º-B, § 1º, e 310, §§ 7º a 13);
+      nova hipótese de admissibilidade da preventiva para integrante de organização
+      criminosa ultraviolenta (art. 313, V); afastamento da competência do júri para
+      homicídios praticados nesse contexto, julgados por órgão colegiado (art. 78, I);
+      e pedido de efeito suspensivo ou ativo no recurso em sentido estrito
+      (art. 584, § 4º)
+    effective: 2026-03-25
+    affects: [T1.1, T1.2, T1.4, T2.8, T4.1, T4.2]

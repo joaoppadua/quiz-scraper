@@ -78,23 +78,33 @@ def test_watchlist_entry_is_injected_for_affected_old_questions(db):
 
 
 def test_unaffected_subtopic_gets_no_watchlist_injection(db):
-    db.upsert_question(_q(subtopic_ids=["T2.8"]))  # júri — in no v1 watchlist entry
+    watchlist = load_watchlist()
+    # Asserting on the block header rather than on one entry's text: otherwise the
+    # test keeps passing once a new entry covers the subtopic it picked.
+    assert "T3.3" not in {s for e in watchlist for s in e.affects}, (
+        "T3.3 is now on the watchlist — pick another uncovered subtopic here"
+    )
+    db.upsert_question(_q(subtopic_ids=["T3.3"]))
     be = FakeBackend([_verdict()])
-    run_vet(db, LLMClient(be), load_watchlist())
-    assert "Anticrime" not in be.calls[0]["user"]
+    run_vet(db, LLMClient(be), watchlist)
+    assert "Watchlist" not in be.calls[0]["user"]
 
 
 def test_question_newer_than_the_change_gets_no_injection(tmp_path):
+    watchlist = load_watchlist()
+    # Derived, not hardcoded: an exam as new as the newest entry predates nothing,
+    # and the test keeps its meaning when the professor adds a more recent law.
+    newest = max(e.effective.year for e in watchlist)
     d = Database.connect(tmp_path / "n.sqlite")
     d.init_schema()
     d.upsert_source_document(
         SourceDocument(id="d", source_id="s", url="u", fetched_at="t",
-                       kind="dataset", exam_year=2024)
+                       kind="dataset", exam_year=newest)
     )
     d.upsert_question(_q())
     be = FakeBackend([_verdict()])
-    run_vet(d, LLMClient(be), load_watchlist())
-    assert "Anticrime" not in be.calls[0]["user"]
+    run_vet(d, LLMClient(be), watchlist)
+    assert "Watchlist" not in be.calls[0]["user"]
     d.close()
 
 
