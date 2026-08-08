@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS llm_calls (
   backend TEXT, model TEXT, tier TEXT, attempt INTEGER,
   input_tokens INTEGER, output_tokens INTEGER, latency_ms INTEGER, ok INTEGER, error TEXT
 );
+CREATE TABLE IF NOT EXISTS harvest_manifest (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, sha256 TEXT NOT NULL,
+  fetched_at TEXT NOT NULL, status INTEGER, content_type TEXT, headers TEXT,
+  local_path TEXT, bytes INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_manifest_sha ON harvest_manifest(sha256);
 CREATE INDEX IF NOT EXISTS idx_q_vet ON questions(vet_status);
 CREATE INDEX IF NOT EXISTS idx_q_discipline ON questions(discipline);
 """
@@ -125,6 +131,17 @@ class Database:
             "INSERT OR REPLACE INTO usage_log (question_id, semester, subtopic_id, used_at, note) "
             "VALUES (?,?,?,?,?)",
             (entry.question_id, entry.semester, entry.subtopic_id, entry.used_at, entry.note),
+        )
+        self.conn.commit()
+
+    def record_fetch(self, **f: Any) -> None:
+        """Provenance for one downloaded file (spec §6). Append-only: the cache
+        means a given URL crosses the wire once, so this is a download log."""
+        self.conn.execute(
+            "INSERT INTO harvest_manifest (url, sha256, fetched_at, status, content_type, "
+            "headers, local_path, bytes) VALUES (?,?,?,?,?,?,?,?)",
+            (f["url"], f["sha256"], f["fetched_at"], f.get("status"), f.get("content_type"),
+             f.get("headers"), f.get("local_path"), f.get("bytes")),
         )
         self.conn.commit()
 
