@@ -188,6 +188,20 @@ class Database:
             params.append(before_semester)
         return {r[0] for r in self.conn.execute(sql, params)}
 
+    def usage_entries(self, semester: str | None = None) -> list[UsageEntry]:
+        """The usage log itself, not just its ids — this is the only place the
+        professor's own notes are stored."""
+        sql, params = (
+            "SELECT question_id, semester, subtopic_id, used_at, note FROM usage_log",
+            [],
+        )
+        if semester:
+            sql += " WHERE semester = ?"
+            params.append(semester)
+        # semester ids are zero-padded "YYYY.N", so lexicographic order is chronological
+        sql += " ORDER BY semester, subtopic_id, used_at"
+        return [UsageEntry(**dict(r)) for r in self.conn.execute(sql, params)]
+
     def stats(self) -> dict[str, Any]:
         def counts(sql: str) -> dict[str, int]:
             return {str(r[0]): r[1] for r in self.conn.execute(sql) if r[0] is not None}

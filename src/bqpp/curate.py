@@ -56,6 +56,7 @@ def render_shortlist(
     ranked: list[tuple[Question, SourceDocument | None]],
     *,
     semester: str,
+    picked: set[str] | None = None,
 ) -> str:
     """Self-contained markdown: readable on GitHub or Drive with no other context."""
     out = [
@@ -91,6 +92,8 @@ def render_shortlist(
             )
         )
         out += [f"## {i}. {q.format} — {q.vet_status}", ""]
+        if picked and q.id in picked:
+            out += [f"> ✅ **Já escolhida para {semester}** — registrada no usage log.", ""]
         if q.vet_status == "flagged":
             codes = ", ".join(f"`{r.code}`" for r in q.vet_reasons) or "—"
             out += [f"> ⚠ **Sinalizada:** {codes}", ""]
@@ -130,7 +133,11 @@ def run_curate(
     dry_run: bool = False,
 ) -> dict[str, int]:
     targets = subtopic_ids or list(taxonomy.labels)
-    used = db.used_question_ids()
+    # Only PRIOR semesters exclude a question, per the README's "will not be offered
+    # again in a later semester". Excluding the current one too made a re-curate drop
+    # the professor's own pick out of the very shortlist they picked it from.
+    used = db.used_question_ids(before_semester=semester)
+    picked = {e.question_id for e in db.usage_entries(semester=semester)}
     out_dir = settings.shortlist_dir / semester.replace(".", "-")
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +156,9 @@ def run_curate(
             if doc and doc.carreira:
                 seen_carreiras.add(doc.carreira)
         written[sid] = len(top)
-        md = render_shortlist(sid, taxonomy.labels[sid], top, semester=semester)
+        md = render_shortlist(
+            sid, taxonomy.labels[sid], top, semester=semester, picked=picked
+        )
         if dry_run:
             log.info("[dry-run] %s: %d candidates", sid, len(top))
             continue

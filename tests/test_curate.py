@@ -64,6 +64,28 @@ def test_rejected_and_previously_used_are_excluded(db, settings):
     assert written["T1.2"] == 1
 
 
+def test_current_semester_pick_stays_in_its_own_shortlist_and_is_marked(db, settings):
+    """Recording a pick must not delete it from the shortlist it was picked from —
+    the file is the professor's class-prep artifact, and a re-curate would otherwise
+    silently swap the chosen question for the next-ranked one."""
+    db.upsert_question(_q("chosen"))
+    db.upsert_question(_q("other"))
+    record_use(db, "chosen", "2026.2", "T1.2")
+
+    written = run_curate(
+        db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T1.2"]
+    )
+    text = (settings.shortlist_dir / "2026-2" / "T1.2.md").read_text(encoding="utf-8")
+    assert written["T1.2"] == 2
+    assert "chosen" in text
+    assert "Já escolhida para 2026.2" in text
+
+    # ...but it is gone from the next semester, which is the point of the log
+    run_curate(db, load_taxonomy(), settings, semester="2027.1", subtopic_ids=["T1.2"])
+    later = (settings.shortlist_dir / "2027-1" / "T1.2.md").read_text(encoding="utf-8")
+    assert "chosen" not in later and "other" in later
+
+
 def test_unvetted_questions_are_not_shortlisted(db, settings):
     db.upsert_question(_q("raw", status="unvetted"))
     written = run_curate(

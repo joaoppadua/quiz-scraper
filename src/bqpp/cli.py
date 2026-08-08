@@ -224,6 +224,43 @@ def use(
 
 
 @app.command()
+def history(
+    semester: Annotated[
+        str | None, typer.Option("--semester", help="Only this semester; default all")
+    ] = None,
+    db: DbOpt = None,
+) -> None:
+    """What was used in class, when, and the note you left on it."""
+    database = _open_db(db)
+    taxonomy = load_taxonomy()
+    entries = database.usage_entries(semester)
+    if not entries:
+        scope = f" para {semester}" if semester else ""
+        console.print(f"[yellow]nada registrado no usage log{scope}[/yellow]")
+        database.close()
+        raise typer.Exit()
+
+    table = Table(title="Usage log", show_header=True)
+    for col in ("semestre", "subtópico", "questão", "em", "nota"):
+        table.add_column(col, no_wrap=col in ("semestre", "em"))
+    for e in entries:
+        q = database.get_question(e.question_id)
+        # a question can vanish if the corpus was rebuilt; the log still stands
+        stem = " ".join(q.stem.split())[:60] + "…" if q else f"[red]{e.question_id[:12]}…[/red]"
+        table.add_row(
+            e.semester,
+            f"{e.subtopic_id} {taxonomy.labels.get(e.subtopic_id, '')}"[:34],
+            stem,
+            (e.used_at or "")[:10],
+            e.note or "—",
+        )
+    console.print(table)
+    n = len(entries)
+    console.print(f"{n} {'questão registrada' if n == 1 else 'questões registradas'}")
+    database.close()
+
+
+@app.command()
 def export(db: DbOpt = None) -> None:
     """Write data/export/questions.jsonl."""
     from bqpp.export import export_jsonl
