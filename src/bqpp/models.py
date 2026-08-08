@@ -7,7 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Kind = Literal["prova", "gabarito", "gabarito_justificado", "dataset"]
+# "manual" is a professor-authored seed (see seed.py), not a harvested document.
+Kind = Literal["prova", "gabarito", "gabarito_justificado", "dataset", "manual"]
 Format = Literal["mcq4", "mcq5", "certo_errado", "dissertativa", "peca"]
 Discipline = Literal["direito-processual-penal", "other", "mixed"]
 Carreira = Literal["oab", "magistratura", "mp", "delegado", "defensoria", "outra"]

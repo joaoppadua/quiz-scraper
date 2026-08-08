@@ -1,0 +1,38 @@
+# Your own questions, for subtopics no public exam covers.
+#
+# After M2, T1.1 (princípios e marco regulatório das medidas cautelares) and
+# T3.3 (regimes de avaliação da prova e standards probatórios) still have zero
+# candidates. Both are doctrinal topics that objective exams avoid; the durable
+# fix is M3, when Cebraspe's magistratura/delegado provas come in. Until then,
+# add a question here and it goes through the same pipeline as a harvested one.
+#
+#   uv run bqpp seed            # ingest; add --force after editing an entry
+#
+# A seed is ingested PRE-CLASSIFIED — you already know the subtopic, so `classify`
+# skips it — but it is NOT pre-vetted: `vet` still runs, and the law watchlist
+# still fires against exam_year.
+#
+# Required per entry: key, subtopic_ids, stem.
+# `key` is the stable identity: keep it fixed and an edit updates the same row.
+
+questions: []
+
+# Example — delete the leading '#' and adjust:
+#
+# questions:
+#   - key: t1-1-excepcionalidade-cautelares
+#     subtopic_ids: [T1.1]            # primary first; up to 2
+#     format: dissertativa            # dissertativa | mcq4 | mcq5 | certo_errado | peca
+#     stem: |
+#       Disserte sobre a excepcionalidade das medidas cautelares pessoais no
+#       processo penal brasileiro, indicando os parâmetros do Art. 282 do CPP.
+#     answer_rationale: |
+#       Espera-se referência à necessidade e à adequação (Art. 282, I e II, do CPP),
+#       à subsidiariedade da prisão preventiva (Art. 282, § 6º) e ao ônus de
+#       fundamentação concreta.
+#     difficulty: medium              # easy | medium | hard (advisory only)
+#     banca: autoral
+#     certame: Processo Penal 2 (UFF)
+#     exam_year: 2026                 # without a year the law watchlist cannot fire
+#     carreira: outra
+#     source_url: manual

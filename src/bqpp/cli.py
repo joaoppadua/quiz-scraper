@@ -158,6 +158,30 @@ def _run_adapters(
 
 
 @app.command()
+def seed(
+    file: Annotated[Path | None, typer.Option("--file", help="Seed YAML; default config/")] = None,
+    db: DbOpt = None,
+    force: Force = False,
+    verbose: Verbose = False,
+) -> None:
+    """Ingest your own questions for subtopics no public exam covers."""
+    _setup_logging(verbose)
+    from bqpp.seed import SeedError, ingest_seeds, load_seeds
+
+    database = _open_db(db)
+    try:
+        n = ingest_seeds(
+            load_seeds(file), db=database, taxonomy=load_taxonomy(), force=force
+        )
+    except SeedError as exc:
+        console.print(f"[red]{exc}[/red]")
+        database.close()
+        raise typer.Exit(code=1) from None
+    console.print(f"seeded {n} questions")
+    database.close()
+
+
+@app.command()
 def classify(
     only_unclassified: Annotated[bool, typer.Option("--only-unclassified")] = True,
     limit: Annotated[int | None, typer.Option("--limit")] = None,
