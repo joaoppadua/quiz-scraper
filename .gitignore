@@ -7,3 +7,9 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .DS_Store
+
+# Generated class material. This is a symlink into the course folder on Google
+# Drive, so curate writes straight there and the shortlists never enter this
+# (public) repo. NO trailing slash: git treats a symlink as a file, so
+# "shortlists/" would fail to match it and commit the absolute path.
+shortlists

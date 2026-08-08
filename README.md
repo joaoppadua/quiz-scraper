@@ -35,12 +35,32 @@ Every command takes `--dry-run` (do everything except write) and `-v`. All four 
 safe to re-run: work is keyed by deterministic ids and existing rows are skipped
 unless you pass `--force`.
 
-Two more:
+Three more:
 
 ```bash
 bqpp stats                        # corpus counts + per-subtopic coverage
+bqpp history                      # what you used in class, and your notes
 bqpp export                       # data/export/questions.jsonl
 ```
+
+## Where the shortlists go
+
+`shortlists/` is gitignored, so generated class material never enters this (public)
+repo. On the machine that runs the pipeline it is a **symlink into the course folder
+on Google Drive**, so `curate` writes straight there and the files sync to every
+device with no copy step:
+
+```bash
+ln -s "/path/to/Drive/UFF/Curso-processo-penal-2/shortlists" shortlists
+```
+
+Note the `.gitignore` entry is `shortlists` with **no trailing slash** — git treats a
+symlink as a file, so `shortlists/` would fail to match it and commit the absolute
+path. On a fresh clone with no symlink, `curate` just writes a normal local directory.
+
+Markdown viewers differ: the `<details>` block that hides the gabarito renders on
+GitHub and in editors like Obsidian, but Drive's own preview shows the raw tags — and
+therefore the answer. Read them in a markdown app if that matters for class.
 
 ## Reading a shortlist
 
@@ -60,7 +80,13 @@ bqpp use <question_id> --semester 2026.2 --subtopic T1.2
 ```
 
 That records it in the usage log, and the question will not be offered again in a
-later semester.
+**later** semester. It stays in the current semester's shortlist, marked
+`✅ Já escolhida` — re-running `curate` mid-selection must not quietly swap your pick
+for the next-ranked question.
+
+The usage log is also the only record of what you actually taught, and `--note` is
+where the "how did it go in class" goes. `bqpp history --semester 2026.2` reads it
+back. Nothing else does, so it is worth keeping in the backup of `data/corpus.sqlite`.
 
 ## Configuration
 
