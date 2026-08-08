@@ -134,7 +134,6 @@ def test_export_round_trips_the_whole_corpus(tmp_path):
 def _m2_pipeline(tmp_path):
     """Same shape as _pipeline, but seeded from a real padrão PDF."""
     from bqpp.harvest.oab_site import Exam, IndexEntry, ingest_padrao
-    from bqpp.parse.pdf import extract_text
 
     settings = load_settings().model_copy(deep=True)
     settings.shortlist_dir = tmp_path / "shortlists"
@@ -143,7 +142,7 @@ def _m2_pipeline(tmp_path):
     db = Database.connect(tmp_path / "m2.sqlite")
     db.init_schema()
     n = ingest_padrao(
-        extract_text(FIX / "oab_site" / "padrao_44.pdf"),
+        (FIX / "oab_site" / "padrao_44.txt").read_text(encoding="utf-8"),
         source_id="oab-2f-penal",
         exam=Exam(id="17000", label="44º EXAME DE ORDEM UNIFICADO"),
         entry=IndexEntry(

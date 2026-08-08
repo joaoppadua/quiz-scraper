@@ -6,14 +6,13 @@ from pathlib import Path
 import pytest
 
 from bqpp.parse.padrao import segment_padrao
-from bqpp.parse.pdf import extract_text
 
 FIX = Path(__file__).parent / "fixtures" / "oab_site"
 
 
 @pytest.fixture(scope="module")
 def sections_44():
-    return segment_padrao(extract_text(FIX / "padrao_44.pdf"))
+    return segment_padrao((FIX / "padrao_44.txt").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")

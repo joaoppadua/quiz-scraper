@@ -75,7 +75,7 @@ quiz-scraper/
     ├── fixtures/oab_site/
     │   ├── seed_page.html           # T2  trimmed real seed page
     │   ├── exam_index.html          # T2  trimmed real per-exam index (44º)
-    │   ├── padrao_44.pdf            # T3  one real padrão, 134 kB (spec §13 acceptance fixture)
+    │   ├── padrao_44.txt            # T3  one real padrão as extracted text (§13 acceptance fixture)
     │   ├── padrao_44.expected.json  # T4  hand-checked expected segmentation
     │   ├── padrao_xxxiii.txt        # T4  Title-Case anchors, pdfplumber-extracted
     │   ├── padrao_xxv.txt           # T4  booklet-code suffix (QUESTÃO 1 – B005250)

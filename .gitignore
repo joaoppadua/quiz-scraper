@@ -13,3 +13,6 @@ __pycache__/
 # (public) repo. NO trailing slash: git treats a symlink as a file, so
 # "shortlists/" would fail to match it and commit the absolute path.
 shortlists
+
+# No exam PDFs in this public repo — fixtures are extracted text (see tests/test_parse_pdf.py).
+tests/fixtures/**/*.pdf

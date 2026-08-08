@@ -165,7 +165,6 @@ from bqpp.db import Database  # noqa: E402
 from bqpp.harvest.oab_site import ingest_padrao  # noqa: E402
 from bqpp.models import Question, SourceDocument, question_id  # noqa: E402
 from bqpp.parse.padrao import segment_padrao  # noqa: E402
-from bqpp.parse.pdf import extract_text  # noqa: E402
 
 
 @pytest.fixture
@@ -178,7 +177,7 @@ def db(tmp_path):
 
 @pytest.fixture
 def padrao_44_text():
-    return extract_text(FIX / "padrao_44.pdf")
+    return (FIX / "padrao_44.txt").read_text(encoding="utf-8")
 
 
 def _ingest(db, text, *, label="44º EXAME DE ORDEM UNIFICADO", entry=None, rung="definitivo",

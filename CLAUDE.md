@@ -87,7 +87,9 @@ Violating one of these is a bug even if the tests pass.
 - **TDD.** Every task in the plan docs starts with a failing test. Tests never touch the network or
   a real LLM: provider SDKs are stubbed, LLM calls go through `llm/fake_client.FakeBackend`, and
   harvest adapters are fed committed fixtures in `tests/fixtures/` (trimmed **real** rows, not
-  invented ones).
+  invented ones). **No exam PDFs are committed** — this repo is public, so padrão fixtures are stored
+  as pdfplumber-extracted text and `.gitignore` blocks `tests/fixtures/**/*.pdf`. The one test that
+  genuinely needs a PDF builds a minimal synthetic one (`tests/test_parse_pdf.py::_one_page_pdf`).
 - `load_settings()` and `load_taxonomy()` are `@cache`d. Tests that need different paths use
   `load_settings().model_copy(deep=True)` and override fields.
 - Ruff with `E,F,W,I,UP,B,C4,DTZ,ISC,RUF`, line length 100. `DTZ` means datetimes need a timezone —
