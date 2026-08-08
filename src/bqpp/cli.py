@@ -102,25 +102,58 @@ def harvest(
 ) -> None:
     """Download / refresh sources into the corpus."""
     _setup_logging(verbose)
-    from bqpp.harvest.hf_datasets import harvest_source
+    _run_adapters(source, db, dry_run=dry_run, force=force)
+
+
+@app.command()
+def parse(
+    source: Annotated[str | None, typer.Option("--source", help="Only this source id")] = None,
+    db: DbOpt = None,
+    dry_run: DryRun = False,
+    force: Force = False,
+    verbose: Verbose = False,
+) -> None:
+    """Re-segment already-downloaded documents, without touching the network.
+
+    Everything harvest does except fetching: it reads the on-disk cache, so the
+    segmenters can be iterated on without asking the OAB for the same 45 PDFs again.
+    """
+    _setup_logging(verbose)
+    _run_adapters(source, db, dry_run=dry_run, force=force, offline=True)
+
+
+def _adapters() -> dict:
+    """Adapter id -> harvest_source callable. Imported lazily: pdfplumber and
+    huggingface_hub are heavy, and `bqpp stats` needs neither."""
+    from bqpp.harvest import hf_datasets, oab_site
+
+    return {"hf_datasets": hf_datasets.harvest_source, "oab_site": oab_site.harvest_source}
+
+
+def _run_adapters(
+    source: str | None, db: Path | None, *, dry_run: bool, force: bool, offline: bool = False
+) -> None:
     from bqpp.harvest.registry import load_sources
 
     settings = load_settings()
     settings.ensure_dirs()
     database = _open_db(db)
+    adapters = _adapters()
     total = 0
     for entry in load_sources():
         if source and entry.id != source:
             continue
-        if entry.adapter != "hf_datasets":
+        run = adapters.get(entry.adapter)
+        if run is None:
             console.print(
-                f"[yellow]skipping {entry.id}: adapter {entry.adapter!r} lands in M2/M3[/yellow]"
+                f"[yellow]skipping {entry.id}: adapter {entry.adapter!r} lands in M3[/yellow]"
             )
             continue
-        n = harvest_source(entry, database, settings, dry_run=dry_run, force=force)
+        kwargs = {"offline": True} if offline and entry.adapter == "oab_site" else {}
+        n = run(entry, database, settings, dry_run=dry_run, force=force, **kwargs)
         console.print(f"{entry.id}: {n} new questions")
         total += n
-    console.print(f"{total} new questions harvested")
+    console.print(f"{total} new questions {'parsed' if offline else 'harvested'}")
     database.close()
 
 

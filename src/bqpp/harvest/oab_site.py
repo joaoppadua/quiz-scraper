@@ -240,25 +240,45 @@ def ingest_padrao(
 
 
 def harvest_source(
-    entry, db: Database, settings, *, dry_run: bool = False, force: bool = False
+    entry,
+    db: Database,
+    settings,
+    *,
+    dry_run: bool = False,
+    force: bool = False,
+    offline: bool = False,
 ) -> int:
-    """Discover every exam, fetch its Penal padrão, and ingest it."""
+    """Discover every exam, fetch its Penal padrão, and ingest it.
+
+    With `offline=True` (this is what `bqpp parse` does) nothing is fetched: the
+    on-disk cache is the only source, so the segmenters can be re-run at will.
+    """
     p = entry.params
     fetcher = Fetcher(
         user_agent=settings.harvest.user_agent,
         cache_dir=settings.raw_dir / "oab",
         db=None if dry_run else db,
         min_interval=float(p.get("min_interval_seconds", 1.5)),
+        offline=offline,
     )
-    exams = parse_exam_ids(fetcher.get(p["seed_url"]).body.decode("utf-8", "replace"))
+    try:
+        seed = fetcher.get(p["seed_url"]).body.decode("utf-8", "replace")
+    except FetchError as exc:
+        log.error("%s: %s", entry.id, exc)
+        return 0
+    exams = parse_exam_ids(seed)
     log.info("%s: %d exams on the index", entry.id, len(exams))
 
     seen = {} if dry_run else db.stem_hashes()
     total = 0
     for exam in exams:
-        index_html = fetcher.get(
-            p["exam_url_template"].format(exam_id=exam.id)
-        ).body.decode("utf-8", "replace")
+        try:
+            index_html = fetcher.get(
+                p["exam_url_template"].format(exam_id=exam.id)
+            ).body.decode("utf-8", "replace")
+        except FetchError as exc:
+            log.error("%s: %s", exam.label, exc)
+            continue
         chosen = select_penal_padrao(parse_exam_index(index_html))
         if not chosen:
             log.info("%s: no Direito Penal padrão published", exam.label)

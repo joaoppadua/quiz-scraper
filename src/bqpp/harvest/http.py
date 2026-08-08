@@ -71,6 +71,7 @@ class Fetcher:
         cache_dir: Path,
         db: Any = None,
         min_interval: float = 1.5,
+        offline: bool = False,
         opener: Opener | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -79,6 +80,7 @@ class Fetcher:
         self.cache_dir = Path(cache_dir)
         self.db = db
         self.min_interval = min_interval
+        self.offline = offline
         self._opener = opener or _urllib_opener
         self._sleep = sleep
         self._clock = clock
@@ -124,6 +126,9 @@ class Fetcher:
                 status=meta.get("status", 200),
                 headers=meta.get("headers", {}),
             )
+
+        if self.offline:
+            raise FetchError(f"{url}: not in the cache and offline mode is on")
 
         self._wait_turn(url)
         log.info("GET %s", url)

@@ -73,3 +73,49 @@ def test_history_surfaces_the_note(tmp_path):
     assert "2026.2" in result.output
     assert "T1.2" in result.output
     assert "excelente" in result.output
+
+
+# ---- M2: adapter dispatch and the parse command ---------------------------
+
+def test_parse_is_registered_with_the_other_spec_commands():
+    """Spec §12 lists `parse`; it had no implementation until M2."""
+    assert "parse" in runner.invoke(app, ["--help"]).stdout
+    assert runner.invoke(app, ["parse", "--help"]).exit_code == 0
+
+
+def test_parse_supports_dry_run_and_verbose():
+    out = runner.invoke(app, ["parse", "--help"]).stdout
+    assert "--dry-run" in out and "--source" in out
+
+
+def test_harvest_dry_run_opens_no_socket_and_writes_nothing(tmp_path, monkeypatch):
+    import bqpp.harvest.http as http_mod
+
+    def explode(*a, **k):  # pragma: no cover - the point is that it never runs
+        raise AssertionError("--dry-run must not reach the network")
+
+    monkeypatch.setattr(http_mod, "_urllib_opener", explode)
+    db_path = tmp_path / "dry.sqlite"
+    result = runner.invoke(
+        app, ["harvest", "--source", "no-such-source", "--dry-run", "--db", str(db_path)]
+    )
+    assert result.exit_code == 0, result.output
+
+    from bqpp.db import Database
+
+    db = Database.connect(db_path)
+    db.init_schema()
+    assert list(db.iter_questions()) == []
+    db.close()
+
+
+def test_an_unknown_adapter_is_reported_not_crashed(tmp_path, monkeypatch):
+    from bqpp.harvest.registry import SourceEntry
+
+    monkeypatch.setattr(
+        "bqpp.harvest.registry.load_sources",
+        lambda *a, **k: [SourceEntry(id="future", adapter="cebraspe", params={})],
+    )
+    result = runner.invoke(app, ["harvest", "--db", str(tmp_path / "t.sqlite")])
+    assert result.exit_code == 0, result.output
+    assert "future" in result.stdout

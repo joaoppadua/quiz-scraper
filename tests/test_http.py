@@ -170,3 +170,19 @@ def test_a_cache_hit_does_not_add_a_manifest_row(tmp_path, db):
 def test_fetching_without_a_database_still_works(tmp_path):
     """harvest --dry-run and the parse-only path have no db handle."""
     assert _fetcher(tmp_path, FakeOpener()).get("https://s.oab.org.br/x.pdf").body
+
+
+def test_offline_mode_serves_the_cache_but_never_the_network(tmp_path):
+    """`bqpp parse` re-segments what is already on disk without re-fetching."""
+    from bqpp.harvest.http import FetchError
+
+    opener = FakeOpener()
+    _fetcher(tmp_path, opener).get("https://s.oab.org.br/x.pdf")
+
+    offline = Fetcher(
+        user_agent="bqpp-test/0.1", cache_dir=tmp_path / "cache", offline=True, opener=opener
+    )
+    assert offline.get("https://s.oab.org.br/x.pdf").from_cache is True
+    with pytest.raises(FetchError):
+        offline.get("https://s.oab.org.br/never-fetched.pdf")
+    assert len(opener.calls) == 1
