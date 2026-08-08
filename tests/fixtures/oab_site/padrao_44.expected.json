@@ -1,0 +1,37 @@
+[
+ {
+  "number": "peca",
+  "format": "peca",
+  "usable": true,
+  "stem_head": "No dia 10/1/2024, Aluísio, entregador, foi realizar uma entrega na residência de",
+  "rationale_head": "De acordo com as informações do enunciado, em que foi proferida sentença condena"
+ },
+ {
+  "number": "1",
+  "format": "dissertativa",
+  "usable": true,
+  "stem_head": "Carlos, com a intenção de obter vantagem indevida em detrimento da União, logrou",
+  "rationale_head": "A questão exige do examinando conhecimentos sobre consunção e acordo de não pers"
+ },
+ {
+  "number": "2",
+  "format": "dissertativa",
+  "usable": true,
+  "stem_head": "Manoela, um dia antes de completar 18 anos, envolveu-se em uma briga na escola, ",
+  "rationale_head": "A questão exige do examinando conhecimentos sobre teoria da atividade e comunica"
+ },
+ {
+  "number": "3",
+  "format": "dissertativa",
+  "usable": true,
+  "stem_head": "Karina e Daniel, casados, celebraram um contrato de locação residencial com Césa",
+  "rationale_head": "A questão exige do examinando conhecimentos sobre exercício arbitrário das própr"
+ },
+ {
+  "number": "4",
+  "format": "dissertativa",
+  "usable": true,
+  "stem_head": "Com intenção de subtrair o conteúdo do cofre da agência bancária do Banco Beta, ",
+  "rationale_head": "A questão exige do examinando conhecimentos sobre coação moral irresistível e in"
+ }
+]
