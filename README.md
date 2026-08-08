@@ -31,6 +31,11 @@ bqpp vet                          # rules + LLM: outdated? ambiguous? (tier: str
 bqpp curate --semester 2026.2     # write shortlists/2026-2/*.md
 ```
 
+The first `harvest` fetches 45 PDFs from the OAB at 1.5 s apart, so it takes a
+couple of minutes. After that everything is cached on disk and re-running is
+instant. `bqpp parse` re-reads that cache and re-segments without touching the
+network — use it when only the parsing changed.
+
 Every command takes `--dry-run` (do everything except write) and `-v`. All four are
 safe to re-run: work is keyed by deterministic ids and existing rows are skipped
 unless you pass `--force`.
@@ -39,6 +44,8 @@ Three more:
 
 ```bash
 bqpp stats                        # corpus counts + per-subtopic coverage
+bqpp parse                        # re-segment cached PDFs, no network
+bqpp seed                         # ingest your own questions (config/seed_questions.yaml)
 bqpp history                      # what you used in class, and your notes
 bqpp export                       # data/export/questions.jsonl
 ```
@@ -116,21 +123,46 @@ change. Adding a third provider is one ~40-line module implementing the
 Every LLM response is validated against a JSON schema in code and re-prompted with
 the validation error up to `max_attempts` times. Unvalidated output is never stored.
 
+## Where the questions come from
+
+| Source | What it gives |
+|---|---|
+| `eduagarcia/oab_exams` (HF) | 177 OAB 1ª-fase multiple-choice items, 2010–2018 |
+| `maritaca-ai/oab-bench` (HF) | 30 OAB 2ª-fase discursive items, exams 39º–44º, with examiner guidelines |
+| `oab-2f-penal` (OAB site) | **the 2ª-fase Direito Penal *padrão de respostas* for every exam since 2010** |
+
+That third one is the M2 milestone and the richest material in the corpus. Each
+*padrão* carries the question verbatim **and the banca's own `Gabarito
+Comentado`** — the reasoning FGV itself published after the recursos phase, which
+is exactly what you want in front of a class.
+
+### Why it fetches from the OAB and not from FGV
+
+The spec pointed this at `oab.fgv.br`. That site no longer serves exam PDFs:
+every `home.aspx?key=N` returns the same 7 kB page with a *seccional* dropdown
+and no links at all. The Conselho Federal publishes the byte-identical files at
+`examedeordem.oab.org.br`, over ordinary GET, so that is where `harvest` goes.
+FGV is still recorded as the *banca*; the OAB is only the host.
+
+Of the 46 exams: 45 published a Penal padrão (the 47º is mid-cycle), 35 use a
+layout the segmenter recognises, and those yield **139 questions** — 111
+discursivas and 28 peças — every one with the banca's commentary attached. The
+ten older exams and the sections whose enunciado is a scanned image are logged
+and skipped rather than ingested half-empty.
+
 ## Scope
 
-This is **M0 + M1** of the spec: skeleton plus the HuggingFace bootstrap
-(`eduagarcia/oab_exams`, `maritaca-ai/oab-bench`), which yields ~207 raw questions
-across 23 OAB exams.
+**M0 + M1 + M2.** Not built yet:
 
-Not built yet:
-
-- **M2** — FGV/OAB PDF harvesting and the 1ª/2ª fase segmenters (`gabarito justificado`)
 - **M3** — Cebraspe *certo/errado* and the generic MP/TJ PDF adapter
+- **M2.5** — the 1ª-fase objective provas (two-column reflow; deferred deliberately,
+  since multiple-choice ranks lowest for this teaching method)
 
-Because the whole M1 corpus predates the *Pacote Anticrime* (2020), `bqpp vet`
-does real work here rather than rubber-stamping. And because the corpus is small,
-run `bqpp stats` after curating: subtopics with a red `0` are the M2 work queue,
-not a bug.
+Much of the corpus predates the *Pacote Anticrime* (2020), so `bqpp vet` does
+real work here rather than rubber-stamping. Run `bqpp stats` after curating:
+a subtopic with a red `0` is a coverage gap, not a bug. Two are expected —
+**T1.1** and **T3.3** are doctrinal topics objective exams avoid. Fill them
+yourself via `config/seed_questions.yaml`, or wait for M3.
 
 ## Tests
 

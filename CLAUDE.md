@@ -11,10 +11,11 @@ class** — it shortlists, the professor chooses.
 
 ```bash
 uv sync --extra dev
-uv run pytest                     # 80 tests, ~1s, no network and no LLM
+uv run pytest                     # 171 tests, ~8s, no network and no LLM
 uv run ruff check .
 uv run bqpp stats                 # corpus counts + per-subtopic coverage
-uv run bqpp harvest | classify | vet | curate --semester 2026.2 | use | history | export
+uv run bqpp harvest | parse | classify | vet | curate --semester 2026.2
+uv run bqpp seed | use | history | stats | export
 ```
 
 `harvest`/`classify`/`vet` hit the network and (for the last two) a real LLM. Prefer `--dry-run`
@@ -26,18 +27,25 @@ and `--limit N` when exercising them by hand.
 |---|---|---|
 | **M0** skeleton | ✅ | models, db, settings, LLM layer, CLI |
 | **M1** HF bootstrap | ✅ | `eduagarcia/oab_exams` + `maritaca-ai/oab-bench` → 207 questions, 19/21 subtopics |
-| **M2** FGV/OAB PDFs | ▶ next | `fgv_oab` adapter, 1ª/2ª fase segmenters, gabarito justificado |
-| **M3** Cebraspe + generic PDFs | ⬜ | certo/errado pipeline, curated concursos allow-list |
+| **M2** OAB 2ª-fase padrões | ✅ | `oab_site` adapter + padrão segmenter → 139 discursivas/peças with banca rationale |
+| **M2.5** 1ª-fase provas | ⬜ | two-column reflow; deferred — MCQ ranks lowest for this method |
+| **M3** Cebraspe + generic PDFs | ⬜ | certo/errado pipeline; needs `item_type` + `stem_context` schema fields |
 | **M4** polish | ⬜ | carreira-diversity ranking, per-semester stats, JSONL round-trip test |
 
-Empty subtopics today: **T1.1** and **T3.3**. A zero in `bqpp stats` is the M2 work queue, not a bug.
-`bqpp parse` (spec §12) does not exist yet — it arrives with M2.
+**T1.1** and **T3.3** stay empty by design — doctrinal topics objective exams avoid. The professor
+seeds them by hand via `config/seed_questions.yaml`; M3/Cebraspe is the durable fix. Do not widen
+scope to chase them.
+
+The M2 plan and its spec-amendment table, all verified against live sources, are in
+`docs/superpowers/plans/2026-08-08-banco-questoes-pp-m2.md`.
 
 ## Architecture invariants
 
 Violating one of these is a bug even if the tests pass.
 
 - **`db.py` is the only module that emits SQL.** Every other module goes through `Database`.
+- **`harvest/http.py` is the only module that opens a socket**, so harvest etiquette is enforced
+  in one testable place. **`parse/` is pure** — bytes or text in, dataclasses out; no network, no DB.
 - **`llm/client.py` is the only place retries, schema validation and call logging live.** Backends
   (`llm/gemini_client.py`, `llm/openai_client.py`) are dumb transports: no retries, no validation,
   no logging, ~40 lines each. Adding a provider must stay that cheap.
@@ -90,8 +98,9 @@ Violating one of these is a bug even if the tests pass.
 ## Layout notes
 
 - `docs/superpowers/plans/` holds the implementation plans. `2026-08-05-banco-questoes-pp-m0-m1.md`
-  is the model to follow: global constraints, a **spec-amendments table verified against live
-  sources**, then TDD tasks with explicit file lists and interfaces. Write the M2 plan the same way.
+  and `2026-08-08-banco-questoes-pp-m2.md` are the model to follow: global constraints, a
+  **spec-amendments table verified against live sources**, then TDD tasks with explicit file lists
+  and interfaces. Write the next milestone's plan the same way.
 - `data/` is gitignored (raw PDFs, `corpus.sqlite`, JSONL export). **`data/corpus.sqlite` holds the
   usage log — the only record of what was actually taught. Never delete it casually; it is not
   reconstructible from the sources.**
