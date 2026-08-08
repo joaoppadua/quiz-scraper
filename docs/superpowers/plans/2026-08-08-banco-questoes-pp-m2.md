@@ -96,16 +96,16 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 - Produces: `normalise_url(url) -> str` — the `http://` → `https://` rewrite (B3), exported separately so it can be tested in isolation.
 - Consumes: `Database.record_fetch(...)`.
 
-- [ ] **Step 1: Write the failing tests.** No real network: monkeypatch the module's opener.
+- [x] **Step 1: Write the failing tests.** No real network: monkeypatch the module's opener.
   - `normalise_url` upgrades `http://s.oab.org.br/x.pdf` and leaves `https://` untouched (B3).
   - A second `.get()` of the same URL returns `from_cache=True` and does **not** call the opener again.
   - The cache file is keyed by a hash of the URL, and the returned `sha256` is the digest of the body.
   - Two back-to-back `.get()` calls to the same host sleep ≥ `min_interval` (inject a fake clock; assert on the recorded sleeps, never wall-clock).
   - Every fetch writes one `harvest_manifest` row carrying url, sha256, fetched_at, status and headers.
-- [ ] **Step 2:** Add `harvest_manifest` to `SCHEMA` in `db.py` (`CREATE TABLE IF NOT EXISTS`, so existing databases pick it up on the next `init_schema()` with no migration) plus `record_fetch(**f)`.
-- [ ] **Step 3:** Implement `http.py` with `urllib.request` — no new dependency for HTTP. The rate limiter is per-host and holds the timestamp of the last request in a dict.
-- [ ] **Step 4:** Run `uv run pytest tests/test_http.py -q` and `uv run ruff check .`.
-- [ ] **Step 5:** Commit — `feat: polite HTTP fetcher with on-disk cache and provenance manifest`.
+- [x] **Step 2:** Add `harvest_manifest` to `SCHEMA` in `db.py` (`CREATE TABLE IF NOT EXISTS`, so existing databases pick it up on the next `init_schema()` with no migration) plus `record_fetch(**f)`.
+- [x] **Step 3:** Implement `http.py` with `urllib.request` — no new dependency for HTTP. The rate limiter is per-host and holds the timestamp of the last request in a dict.
+- [x] **Step 4:** Run `uv run pytest tests/test_http.py -q` and `uv run ruff check .`.
+- [x] **Step 5:** Commit — `feat: polite HTTP fetcher with on-disk cache and provenance manifest`.
 
 **Requirements:** ≤ 1 req/s per host (default 1.5 for headroom); never re-download an unchanged file; the manifest is the provenance record spec §6 demands. `min_interval` is a constructor argument so tests do not sleep.
 
@@ -118,7 +118,7 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 **Interfaces:**
 - Produces: `parse_exam_ids(html) -> list[Exam]` (`Exam.id`, `Exam.label`); `parse_exam_index(html) -> list[IndexEntry]` (`.href`, `.label`, `.date: date | None`, `.area: str | None`, `.variant: str | None`); `select_penal_padrao(entries) -> tuple[IndexEntry, str] | None` returning the entry and which rung of the ladder it came from (`"definitivo"` / `"plain"`).
 
-- [ ] **Step 1: Write the failing tests** against committed real HTML (trimmed to the relevant `<select>` / anchor block, never hand-invented).
+- [x] **Step 1: Write the failing tests** against committed real HTML (trimmed to the relevant `<select>` / anchor block, never hand-invented).
   - `parse_exam_ids` finds 46 exams from the seed page and **drops the `value="0"` placeholder**.
   - `parse_exam_index` returns 41 PDF entries for the 44º, each with a parsed `date`.
   - `select_penal_padrao` prefers `Padrão de respostas definitivo (Direito Penal)` over `Padrão de respostas (Direito Penal)` and reports rung `"definitivo"` (B10).
@@ -127,10 +127,10 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
   - It does **not** match `(Direito Civil)`, `(Direito Tributário)`, or a 1ª-fase `Caderno de Prova - Tipo 1`.
   - A `Porto Alegre/RS` / `Reaplicação Porto Velho/RO` label yields a populated `.variant` and is kept as a separate entry, not deduped (B11).
   - `exam_year` comes from the `dd/mm/yyyy` label prefix; a URL under `/arquivos/2019/10/` for an XXV-era exam must **not** produce year 2019 (B4).
-- [ ] **Step 2:** Implement with `re` + `html.unescape`, consistent with how the project already parses (no new HTML dependency for two fixed page shapes).
-- [ ] **Step 3:** Add the `oab-2f-penal` source entry to `config/sources.yaml` — `adapter: oab_site`, `seed_url`, `exam_url_template`, `area: "Direito Penal"`, `banca: FGV`, `carreira: oab`, and a `notes` block recording the B1 amendment.
-- [ ] **Step 4:** `uv run pytest tests/test_oab_site.py -q` and `uv run ruff check .`.
-- [ ] **Step 5:** Commit — `feat: OAB exam index scraper with definitivo-first artifact selection`.
+- [x] **Step 2:** Implement with `re` + `html.unescape`, consistent with how the project already parses (no new HTML dependency for two fixed page shapes).
+- [x] **Step 3:** Add the `oab-2f-penal` source entry to `config/sources.yaml` — `adapter: oab_site`, `seed_url`, `exam_url_template`, `area: "Direito Penal"`, `banca: FGV`, `carreira: oab`, and a `notes` block recording the B1 amendment.
+- [x] **Step 4:** `uv run pytest tests/test_oab_site.py -q` and `uv run ruff check .`.
+- [x] **Step 5:** Commit — `feat: OAB exam index scraper with definitivo-first artifact selection`.
 
 **Requirements:** URLs live in `sources.yaml`, never as literals in code. Label matching is tolerant (`re.I`, optional article, en-dash or hyphen), because the vocabulary drifts across 15 years of exams.
 
@@ -143,14 +143,14 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 **Interfaces:**
 - Produces: `extract_text(path_or_bytes) -> str` (pages joined with `\n`); `text_health(text) -> Literal["ok", "no_text_layer", "glyph_unmapped"]`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `extract_text` on the committed 44º padrão returns > 15 000 chars and contains `PADRÃO DE RESPOSTA` and `Gabarito Comentado`.
   - `text_health("")` and whitespace-only ⇒ `"no_text_layer"`.
   - `text_health` on a synthetic string with a high `(cid:N)` / non-Latin ratio ⇒ `"glyph_unmapped"`; on the real 44º text ⇒ `"ok"`.
-- [ ] **Step 2:** Add `pdfplumber>=0.11` to `[project].dependencies`; `uv sync --extra dev`.
-- [ ] **Step 3:** Implement. Import `pdfplumber` **inside** the function, matching how `hf_datasets.py` defers `huggingface_hub`/`pyarrow` — the CLI must stay fast to start and importable without the parsing extras loaded.
-- [ ] **Step 4:** `uv run pytest tests/test_parse_pdf.py -q`; `uv run ruff check .`.
-- [ ] **Step 5:** Commit — `feat: pdfplumber text extraction with text-layer health check`.
+- [x] **Step 2:** Add `pdfplumber>=0.11` to `[project].dependencies`; `uv sync --extra dev`.
+- [x] **Step 3:** Implement. Import `pdfplumber` **inside** the function, matching how `hf_datasets.py` defers `huggingface_hub`/`pyarrow` — the CLI must stay fast to start and importable without the parsing extras loaded.
+- [x] **Step 4:** `uv run pytest tests/test_parse_pdf.py -q`; `uv run ruff check .`.
+- [x] **Step 5:** Commit — `feat: pdfplumber text extraction with text-layer health check`.
 
 **Requirements:** No OCR (B9). The health check exists to make a bad document *loud*, not to repair it. `extract_text` must never raise on a malformed PDF — catch, log, return `""`, and let `text_health` classify it.
 
@@ -163,7 +163,7 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 **Interfaces:**
 - Produces: `segment_padrao(text) -> list[Section]` where `Section` has `.number: str` (`"peca"`, `"1"`…`"4"`), `.format: Literal["peca","dissertativa"]`, `.stem: str`, `.rationale: str`, `.usable: bool`.
 
-- [ ] **Step 1: Write the failing tests.** Generate every `.txt` fixture with **pdfplumber** (B8) from the real PDFs, then hand-check.
+- [x] **Step 1: Write the failing tests.** Generate every `.txt` fixture with **pdfplumber** (B8) from the real PDFs, then hand-check.
   - The 44º (ALL-CAPS sub-headers) yields exactly 5 sections: 1 `peca` + 4 `dissertativa`, all `usable`, matching `padrao_44.expected.json` — the spec §13 acceptance fixture.
   - XXXIII (Title-Case `Enunciado`/`Gabarito Comentado`) yields 5 usable sections. **This is the B7 regression test**: a case-sensitive regex passes the 44º and fails here.
   - XXV yields 5 sections despite the `– B005250` booklet-code suffix, and `.number` is `"1"`, not `"1 – B005250"` (B7).
@@ -171,9 +171,9 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
   - VII (no `Enunciado`/`Gabarito Comentado` sub-headers) yields sections with a rationale but an empty stem, all `usable=False` (B9).
   - Page furniture — `ORDEM DOS ADVOGADOS DO BRASIL`, `Página N de M`, `ÁREA: DIREITO PENAL`, `Aplicada em …`, the `gabarito preliminar` disclaimer — never appears in `.stem` or `.rationale`.
   - Sub-item markers `A)` / `B)` and `(Valor: 0,65)` survive **verbatim** in the stem (spec §15: verbatim, never paraphrased).
-- [ ] **Step 2:** Implement. Section anchors and sub-headers all compile with `re.I`; the footer stripper is a single line-level regex applied to both stem and rationale. `usable = len(stem) >= 80 and len(rationale) >= 80`.
-- [ ] **Step 3:** `uv run pytest tests/test_padrao.py -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: padrão de resposta segmenter with per-section quality gate`.
+- [x] **Step 2:** Implement. Section anchors and sub-headers all compile with `re.I`; the footer stripper is a single line-level regex applied to both stem and rationale. `usable = len(stem) >= 80 and len(rationale) >= 80`.
+- [x] **Step 3:** `uv run pytest tests/test_padrao.py -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: padrão de resposta segmenter with per-section quality gate`.
 
 **Requirements:** Pure function, no I/O. Measured target: 175 sections across 35 exams, 139 usable. A change that lowers either number is a regression.
 
@@ -187,16 +187,16 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 - Produces: `ingest_padrao(text, *, exam, entry, rung, db, force) -> int`; `harvest_source(entry, db, settings, *, dry_run, force) -> int` (same signature as the `hf_datasets` one, so the CLI dispatch is uniform).
 - Consumes: `Database.stem_hashes() -> dict[str, str]` (normalised stem hash → question id).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - One `SourceDocument` per exam: `kind="gabarito_justificado"`, `banca="FGV"`, `carreira="oab"`, `certame="OAB 44º Exame (2ª fase)"`, `exam_year` from the label date (B4), `id` = sha256 of the PDF bytes.
   - Questions get `format` `dissertativa`/`peca`, `answer_rationale` populated, `answer_key=None`, and `question_number` `"peca"`/`"1"`…`"4"`.
   - `usable=False` sections are **skipped, not stored with an empty stem** (B9), and the skip is logged.
   - Re-running ingests 0 new questions (idempotence), and `--force` re-writes them.
   - A question whose normalised stem already exists from `hf-oab-bench` is skipped as a duplicate (B13).
   - Stem normalisation collapses whitespace and case-folds before hashing, so a re-flowed line break is not a new question.
-- [ ] **Step 2:** Implement. `_exam_document()` mirrors the one in `hf_datasets.py` — one `source_documents` row per exam, because **`exam_year` is what makes the law watchlist fire** (the lesson already recorded in that module).
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: ingest OAB 2ª-fase padrões with stem-hash deduplication`.
+- [x] **Step 2:** Implement. `_exam_document()` mirrors the one in `hf_datasets.py` — one `source_documents` row per exam, because **`exam_year` is what makes the law watchlist fire** (the lesson already recorded in that module).
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: ingest OAB 2ª-fase padrões with stem-hash deduplication`.
 
 **Requirements:** No `ALTER TABLE`. The professor's live `data/corpus.sqlite` holds the usage log and must survive this milestone untouched — dedup reads existing stems into memory (the corpus is ~350 rows).
 
@@ -206,10 +206,10 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 
 **Files:** Modify `src/bqpp/cli.py`, `tests/test_cli.py`.
 
-- [ ] **Step 1: Write the failing tests.** `bqpp parse --help` exits 0; `harvest --source oab-2f-penal --dry-run` neither writes rows nor opens a socket; an unknown adapter still prints the "lands in M3" notice rather than crashing.
-- [ ] **Step 2:** Replace the hardcoded `if entry.adapter != "hf_datasets"` check with a dispatch table `{"hf_datasets": …, "oab_site": …}`, and add `bqpp parse [--source ID]` for re-segmenting already-cached PDFs without re-fetching (spec §12 lists `parse` as a first-class command; it has had no implementation until now).
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: adapter dispatch and the bqpp parse command`.
+- [x] **Step 1: Write the failing tests.** `bqpp parse --help` exits 0; `harvest --source oab-2f-penal --dry-run` neither writes rows nor opens a socket; an unknown adapter still prints the "lands in M3" notice rather than crashing.
+- [x] **Step 2:** Replace the hardcoded `if entry.adapter != "hf_datasets"` check with a dispatch table `{"hf_datasets": …, "oab_site": …}`, and add `bqpp parse [--source ID]` for re-segmenting already-cached PDFs without re-fetching (spec §12 lists `parse` as a first-class command; it has had no implementation until now).
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: adapter dispatch and the bqpp parse command`.
 
 **Requirements:** `cli.py` still holds **no business logic**. `parse` re-reads from the fetch cache, so it is safe to iterate on the segmenter without touching the network.
 
@@ -221,16 +221,16 @@ Responsibility boundaries carried over and extended: **`db.py` is still the only
 
 This exists because T1.1 and T3.3 have zero candidates and the OAB exam is unlikely ever to supply them (they are doctrinal topics objective exams avoid). The durable fix is M3/Cebraspe; this unblocks the course now.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - A seed entry with explicit `subtopic_ids` is ingested **pre-classified** (`classify_model="manual"`, `classified_at` set) so `bqpp classify` skips it — the professor's own classification is not second-guessed by an LLM.
   - It still flows through `bqpp vet` normally.
   - Invalid subtopic ids are rejected loudly against `taxonomy.yaml` rather than stored.
   - Re-seeding the same file is idempotent (id = sha256 of the seed file + entry key).
   - A seed entry lacking `stem` or `subtopic_ids` raises with the offending entry named.
-- [ ] **Step 2:** Add `"manual"` to the `Kind` literal in `models.py` (TEXT column, no migration). Implement `seed.py` and `bqpp seed [--file PATH]`.
-- [ ] **Step 3:** Ship `config/seed_questions.yaml` as a **commented empty template** documenting every field, with T1.1 and T3.3 named as the reason it exists.
-- [ ] **Step 4:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 5:** Commit — `feat: manual seed path for subtopics no exam covers`.
+- [x] **Step 2:** Add `"manual"` to the `Kind` literal in `models.py` (TEXT column, no migration). Implement `seed.py` and `bqpp seed [--file PATH]`.
+- [x] **Step 3:** Ship `config/seed_questions.yaml` as a **commented empty template** documenting every field, with T1.1 and T3.3 named as the reason it exists.
+- [x] **Step 4:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 5:** Commit — `feat: manual seed path for subtopics no exam covers`.
 
 ---
 
@@ -238,17 +238,55 @@ This exists because T1.1 and T3.3 have zero candidates and the OAB exam is unlik
 
 **Files:** Modify `README.md`, `CLAUDE.md`, `tests/test_end_to_end.py`.
 
-- [ ] **Step 1:** Extend the end-to-end test: fixture padrão → segment → ingest → classify (fake LLM) → vet → curate, asserting a discursive item with a rationale reaches a shortlist and its `<details>` block carries the **Gabarito comentado da banca**. Still no network, still no real LLM.
-- [ ] **Step 2:** Update `README.md` — M2 in scope, the OAB source and why it is not FGV (B1), `bqpp parse` and `bqpp seed`, and a note that the first `harvest` downloads ~45 PDFs at ~1.5 s apart (roughly two minutes).
-- [ ] **Step 3:** Update the milestone table and empty-subtopic line in `CLAUDE.md`.
-- [ ] **Step 4:** Full verification: `uv run pytest -q` (all green) and `uv run ruff check .`.
-- [ ] **Step 5:** **Real run** against the live site and a real LLM:
+- [x] **Step 1:** Extend the end-to-end test: fixture padrão → segment → ingest → classify (fake LLM) → vet → curate, asserting a discursive item with a rationale reaches a shortlist and its `<details>` block carries the **Gabarito comentado da banca**. Still no network, still no real LLM.
+- [x] **Step 2:** Update `README.md` — M2 in scope, the OAB source and why it is not FGV (B1), `bqpp parse` and `bqpp seed`, and a note that the first `harvest` downloads ~45 PDFs at ~1.5 s apart (roughly two minutes).
+- [x] **Step 3:** Update the milestone table and empty-subtopic line in `CLAUDE.md`.
+- [x] **Step 4:** Full verification: `uv run pytest -q` (all green) and `uv run ruff check .`.
+- [x] **Step 5:** **Real run** against the live site and a real LLM:
   ```bash
   uv run bqpp harvest --source oab-2f-penal -v
   uv run bqpp classify -v && uv run bqpp vet -v
   uv run bqpp curate --semester 2026.2 && uv run bqpp stats
   ```
-- [ ] **Step 6:** Commit — `feat: M2 end-to-end — OAB 2ª-fase padrões in the shortlists`.
+- [x] **Step 6:** Commit — `feat: M2 end-to-end — OAB 2ª-fase padrões in the shortlists`.
+
+---
+
+## Result (real run, 2026-08-08)
+
+All eight tasks landed; 171 tests green, ruff clean. Measured against the definition of done below:
+
+| | Target | Actual |
+|---|---|---|
+| Padrões fetched | 45 | **45** (92 manifest rows = 47 index pages + 45 PDFs, all `https`) |
+| Exams segmented | 35 | **35** — the 10 pre-convention exams logged by name and skipped |
+| Sections / usable | 175 / 139 | **175 / 139** |
+| Questions ingested | ~139 | **134** — the other 5 were the 44º, correctly deduped against `oab-bench` |
+| Corpus total | ~345 | **341** (was 207) |
+| `dissertativa` | ~135 | **131** (was 24); `peca` 33 (was 6) |
+| Questions with a rationale | — | **164** (was 30) |
+| Re-run ingests nothing | yes | **yes**, and with no network traffic — every URL a cache hit |
+| `usage_log` preserved | yes | **yes** (backed up to `data/corpus.sqlite.pre-m2.*.bak` first) |
+
+Subtopic coverage after curating: every subtopic grew, several sharply — T2.4 25→63, T4.2 19→69,
+T2.7 10→26, T2.2 11→23, T1.4 8→17, T3.5 5→15.
+
+**T1.1 went from 0 to 3 candidates**, which this plan did not predict: the OAB 2ª fase does set
+discursive questions on the *marco regulatório* of medidas cautelares, even though the objective exam
+avoids the topic. **T3.3 (standards probatórios) is the only subtopic still empty**, as expected —
+it remains M3/seed work.
+
+Two things the run surfaced that are *not* M2 defects:
+
+1. One pre-existing M1 `mcq4` fails both classification and vetting because Gemini returns an empty
+   body for it (almost certainly a safety filter on the fact pattern). It never reaches the OpenAI
+   fallback, because `llm/fallback.py` deliberately falls through only on `LLMTransientError` and an
+   empty body surfaces as a validation error. Defensible as written, but an empty response is more
+   plausibly a provider refusal than a schema problem. Worth revisiting on its own.
+2. The `DISTRIBUIÇÃO DOS PONTOS` scoring table is carried into `answer_rationale` verbatim, and its
+   two-column layout re-flows awkwardly in markdown. The content is useful — it is how the banca
+   weighted each element — so it is kept. Trimming it is a one-line change in `padrao._split_body`
+   if the professor prefers a cleaner block.
 
 ---
 
