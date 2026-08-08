@@ -51,3 +51,26 @@ sources:
       Discursive bootstrap, 30 penal rows (OAB 2a fase). Official examiner guidelines
       live in a separate `guidelines` config, joined on question_id, and land in
       answer_rationale. Check the dataset licence before redistributing.
+
+  - id: oab-2f-penal
+    adapter: oab_site
+    # Spec §6 names this source `fgv-oab` at https://oab.fgv.br. That site is dead
+    # for harvesting: every home.aspx?key=N returns the same 7 kB ASP.NET shell with
+    # a seccional dropdown and no PDF links. The Conselho Federal da OAB publishes
+    # the byte-identical files over plain GET, so we fetch there. FGV is still the
+    # banca; the OAB is only the host.
+    seed_url: https://examedeordem.oab.org.br/EditaisProvas?NumeroExame=0
+    exam_url_template: https://examedeordem.oab.org.br/EditaisProvas?NumeroExame={exam_id}
+    area: Direito Penal
+    banca: FGV
+    carreira: oab
+    # Spec §6 requires <= 1 request/second per host; 1.5 s gives headroom. A full
+    # sweep is 47 index GETs + 45 PDFs, so roughly two and a half minutes.
+    min_interval_seconds: 1.5
+    notes: >
+      OAB 2ª fase, Direito Penal. The "Padrão de respostas" is self-contained —
+      Enunciado (the question verbatim) plus the banca's own Gabarito Comentado —
+      so there is no prova/gabarito pair to join; one PDF per exam is the whole
+      artifact. 45 of 46 exams publish one (34 definitivo, 11 preliminary only);
+      the 47º is mid-cycle. Measured yield: 175 sections across 35 exams, 139 of
+      them with both a stem and a rationale.
