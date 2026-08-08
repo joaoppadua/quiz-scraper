@@ -20,6 +20,18 @@ def source_doc_id(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def stem_hash(stem: str) -> str:
+    """Content key for cross-source deduplication.
+
+    The same OAB 2ª-fase question reaches the corpus twice — once from
+    maritaca-ai/oab-bench and once from the official padrão — with different line
+    wrapping and sometimes different case. Normalise both away before hashing, and
+    use a prefix: the tail of a stem varies with how the point values were typeset.
+    """
+    normalised = " ".join(stem.split()).casefold()
+    return hashlib.sha256(normalised[:300].encode()).hexdigest()
+
+
 def question_id(source_doc_id: str, question_number: str) -> str:
     """Deterministic id for a question: sha256(source_doc_id + question_number)."""
     return hashlib.sha256(f"{source_doc_id}:{question_number}".encode()).hexdigest()

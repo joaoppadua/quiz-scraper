@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from bqpp.models import Question, SourceDocument, UsageEntry, VetReason
+from bqpp.models import Question, SourceDocument, UsageEntry, VetReason, stem_hash
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS source_documents (
@@ -197,6 +197,18 @@ class Database:
         sql += " ORDER BY id"
         for row in self.conn.execute(sql, params):
             yield self._to_question(row)
+
+    def stem_hashes(self) -> dict[str, str]:
+        """Content key -> question id, for cross-source dedup at ingest time.
+
+        Computed in Python rather than stored: the corpus is a few hundred rows,
+        and a stored column would mean an ALTER TABLE against a live database
+        whose usage_log is the only record of what was actually taught.
+        """
+        return {
+            stem_hash(row["stem"]): row["id"]
+            for row in self.conn.execute("SELECT id, stem FROM questions")
+        }
 
     def used_question_ids(self, before_semester: str | None = None) -> set[str]:
         sql, params = "SELECT question_id FROM usage_log", []
