@@ -227,10 +227,22 @@ def test_reaplicacao_variant_reaches_the_certame(db, padrao_44_text):
 
 
 def test_unusable_sections_are_skipped_not_stored_empty(db):
-    """A section whose enunciado did not extract must not become a question."""
-    text = (FIX / "padrao_vii.txt").read_text(encoding="utf-8")
+    """A section whose enunciado did not extract must not become a question.
+
+    Uses a synthetic rationale-only padrão: the VII fixture no longer qualifies, since
+    its `Enunciado:` sub-headers are recognised now that the anchors tolerate a colon.
+    """
+    text = "PADRÃO DE RESPOSTA – QUESTÃO 1\nGabarito Comentado\n" + "Resposta esperada. " * 30
     assert _ingest(db, text, label="VII EXAME DE ORDEM UNIFICADO") == 0
     assert list(db.iter_questions()) == []
+
+
+def test_the_pre_2013_era_now_ingests(db):
+    """VII writes `Enunciado:` / `Gabarito comentado:`; the whole era was being dropped."""
+    text = (FIX / "padrao_vii.txt").read_text(encoding="utf-8")
+    assert _ingest(db, text, label="VII EXAME DE ORDEM UNIFICADO") == 5
+    for q in db.iter_questions():
+        assert q.stem and q.answer_rationale
 
 
 def test_ingest_is_idempotent(db, padrao_44_text):
@@ -291,3 +303,29 @@ def test_stems_are_stored_verbatim(db, padrao_44_text):
     stems = {q.stem for q in db.iter_questions()}
     assert {s.stem for s in segment_padrao(padrao_44_text)} == stems
     assert json.dumps(list(stems))  # round-trips as JSON for the export
+
+
+def test_every_application_variant_is_selected(index_xxv):
+    """XXV was applied twice. The index is newest-first and the reaplicação is
+    published last, so picking one best entry harvested Porto Alegre/RS and never
+    requested the main application at all (amendment B11 says do not collapse them)."""
+    from bqpp.harvest.oab_site import select_penal_padroes
+
+    chosen = select_penal_padroes(parse_exam_index(index_xxv))
+    assert {e.variant for e, _ in chosen} == {None, "Porto Alegre/RS"}
+    assert all(rung == "definitivo" for _, rung in chosen)
+
+
+def test_the_main_application_comes_first(index_xxv):
+    from bqpp.harvest.oab_site import select_penal_padroes
+
+    chosen = select_penal_padroes(parse_exam_index(index_xxv))
+    assert chosen[0][0].variant is None
+    assert select_penal_padrao(parse_exam_index(index_xxv))[0].variant is None
+
+
+def test_a_single_application_yields_exactly_one(index_44):
+    from bqpp.harvest.oab_site import select_penal_padroes
+
+    chosen = select_penal_padroes(parse_exam_index(index_44))
+    assert len(chosen) == 1 and chosen[0][1] == "definitivo"

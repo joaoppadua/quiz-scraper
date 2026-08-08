@@ -87,14 +87,6 @@ def test_zero_padded_numbers_normalise():
 
 # ---- amendment B9: the quality gate ---------------------------------------
 
-def test_sections_without_an_extractable_stem_are_marked_unusable(sections_vii):
-    """VII has no Enunciado/Gabarito sub-headers: the rationale extracts, the
-    stem does not. Such a section must never become a question with an empty stem."""
-    assert len(sections_vii) == 5
-    assert not any(s.usable for s in sections_vii)
-    assert all(s.rationale for s in sections_vii), "the rationale is still there"
-
-
 def test_a_document_with_no_anchors_yields_nothing():
     assert segment_padrao("ORDEM DOS ADVOGADOS DO BRASIL\nalgum texto solto") == []
     assert segment_padrao("") == []
@@ -126,3 +118,40 @@ def test_stem_and_rationale_do_not_overlap(sections_44):
     for s in sections_44:
         assert s.stem not in s.rationale
         assert "Gabarito Comentado" not in s.stem
+
+
+# ---- regressions found by the M2 adversarial review -----------------------
+
+@pytest.mark.parametrize("fixture", ["padrao_xxxiii.txt", "padrao_xxv.txt", "padrao_vii.txt"])
+def test_page_furniture_is_stripped_from_every_era(fixture):
+    """The 44º happens to contain neither footer form, so asserting only against it
+    proved nothing. XXXIII and XXV splice `Padrão de Resposta Página 1 de 12` and the
+    disclaimer's continuation line straight into the middle of a legal fact pattern."""
+    import re
+
+    leak = re.compile(
+        r"(P[áa]gina\s+\d+\s*(?:de|/)\s*\d+|podendo ser alterado|Padr[ãa]o de Resposta P)", re.I
+    )
+    text = (FIX / fixture).read_text(encoding="utf-8")
+    for s in segment_padrao(text):
+        assert not leak.search(s.stem), f"furniture in stem of {fixture} §{s.number}"
+        assert not leak.search(s.rationale), f"furniture in rationale of {fixture} §{s.number}"
+
+
+def test_colon_suffixed_sub_headers_are_recognised(sections_vii):
+    """VII writes `Enunciado:` and `Gabarito comentado:`. Anchoring to end-of-line
+    without tolerating the colon dropped the whole pre-2013 era, and — worse — glued
+    the enunciado into the rationale field."""
+    assert len(sections_vii) == 5
+    assert all(s.usable for s in sections_vii)
+    for s in sections_vii:
+        assert "Gabarito comentado" not in s.stem
+        assert s.stem and s.rationale
+
+
+def test_a_rationale_only_section_is_still_unusable():
+    """The quality gate must still fire when there genuinely is no enunciado."""
+    text = "PADRÃO DE RESPOSTA – QUESTÃO 1\n" + "Resposta esperada. " * 30
+    (section,) = segment_padrao(text)
+    assert not section.usable
+    assert section.stem == ""

@@ -36,8 +36,11 @@ _SECTION = re.compile(
     r"[^\n]*",
     re.I,
 )
-_ENUNCIADO = re.compile(r"^[ \t]*ENUNCIADO[ \t]*$", re.I | re.M)
-_COMENTADO = re.compile(r"^[ \t]*GABARITO\s+COMENTADO[ \t]*$", re.I | re.M)
+# The trailing colon is not decoration: the pre-2013 exams write "Enunciado:" and
+# "Gabarito comentado:". Anchoring to end-of-line without it dropped that whole era,
+# and — worse — glued the enunciado into the rationale field.
+_ENUNCIADO = re.compile(r"^[ \t]*ENUNCIADO[ \t]*:?[ \t]*$", re.I | re.M)
+_COMENTADO = re.compile(r"^[ \t]*GABARITO\s+COMENTADO[ \t]*:?[ \t]*$", re.I | re.M)
 
 # Running headers, footers and the boilerplate disclaimer. These repeat on every
 # page, so without stripping they land in the middle of a stem.
@@ -45,7 +48,9 @@ _FURNITURE = re.compile(
     r"^\s*(?:"
     r"ORDEM DOS ADVOGADOS DO BRASIL.*"
     r"|Padr[ãa]o de Resposta da Prova.*"
-    r"|P[áa]gina\s+\d+\s+de\s+\d+.*"
+    # The dominant footer form is "Padrão de Resposta Página 1 de 12", which the
+    # "da Prova" alternative above does not cover, and it lands mid-sentence.
+    r"|(?:Padr[ãa]o de Resposta\s+)?P[áa]gina\s+\d+\s*(?:de|/)\s*\d+.*"
     r"|Prova\s+Pr[áa]tico-?[Pp]rofissional.*"
     r"|[ÁA]REA:.*"
     r"|Aplicada\s+em\s+\d.*"
@@ -53,6 +58,8 @@ _FURNITURE = re.compile(
     r"|[IVXLC]+\s+EXAME\s+DE\s+ORDEM.*"
     r"|EXAME\s+DE\s+ORDEM\s+UNIFICADO.*"
     r"|.*gabarito\s+preliminar.*"
+    # ...and its continuation line, which wraps onto its own line.
+    r"|.*divulga[çc][ãa]o\s+do\s+padr[ãa]o\s+de\s+respostas\s+definitivo.*"
     r"|.*mera\s+coincid[êe]ncia.*"
     r")\s*$",
     re.I | re.M,

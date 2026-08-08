@@ -122,6 +122,9 @@ def parse(
     _run_adapters(source, db, dry_run=dry_run, force=force, offline=True)
 
 
+_OFFLINE_CAPABLE = {"oab_site"}
+
+
 def _adapters() -> dict:
     """Adapter id -> harvest_source callable. Imported lazily: pdfplumber and
     huggingface_hub are heavy, and `bqpp stats` needs neither."""
@@ -149,7 +152,14 @@ def _run_adapters(
                 f"[yellow]skipping {entry.id}: adapter {entry.adapter!r} lands in M3[/yellow]"
             )
             continue
-        kwargs = {"offline": True} if offline and entry.adapter == "oab_site" else {}
+        if offline and entry.adapter not in _OFFLINE_CAPABLE:
+            # Otherwise `bqpp parse` reaches the network anyway, and with --force it
+            # re-ingests every HF row from scratch, wiping its classification and vetting.
+            console.print(
+                f"[yellow]skipping {entry.id}: adapter {entry.adapter!r} has no offline mode[/yellow]"
+            )
+            continue
+        kwargs = {"offline": True} if offline else {}
         n = run(entry, database, settings, dry_run=dry_run, force=force, **kwargs)
         console.print(f"{entry.id}: {n} new questions")
         total += n

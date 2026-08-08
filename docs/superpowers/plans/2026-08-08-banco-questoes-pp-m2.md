@@ -290,6 +290,37 @@ Two things the run surfaced that are *not* M2 defects:
 
 ---
 
+## Post-review corrections (2026-08-08)
+
+An adversarial review of the M2 diff raised 25 findings; 12 survived independent refutation, and
+seven distinct defects were fixed. Four mattered:
+
+| | Defect | Fix |
+|---|---|---|
+| **C1** | `_FURNITURE` missed the dominant footer form `Padrão de Resposta Página 1 de 12` and the disclaimer's wrapped second line, splicing both **mid-sentence into legal fact patterns** — 23 injections per exam on XXV and XXXIII. Straight violation of "verbatim, never paraphrased". | Widened two alternatives. The existing furniture test ran only on the 44º, which contains neither form, so it asserted nothing; it now runs across all three eras. |
+| **C2** | `_ENUNCIADO`/`_COMENTADO` anchored to end-of-line with no tolerance for a colon, so the whole pre-2013 era (`Enunciado:` / `Gabarito comentado:`) yielded empty stems and was discarded — and when both anchors missed, the enunciado was glued into the *rationale* field. | `:?` on both. **Two tests had pinned this bug**, with docstrings asserting VII "has no sub-headers" — a claim contradicted by the committed fixture. Repointed at a synthetic rationale-only input. |
+| **C3** | `db.upsert_question(force=True)` rebuilt a row from the incoming object, so `harvest --force` **silently destroyed every classification and vetting result** on the corpus. Pre-existing since M1; M2's `parse --force` made it reachable from a command documented as offline and safe. | Stage-owned columns are carried forward on a force-reingest unless the caller supplies its own (which `bqpp seed` does). `classify --force` / `vet --force` remain the way to redo LLM work. |
+| **C4** | `select_penal_padrao` returned one entry per exam, and since the index is newest-first the **reaplicação replaced the main application** — XXV's Porto Alegre/RS and XX's Porto Velho/RO padrões were harvested and the main applications never requested. Contradicted amendment B11. | `select_penal_padroes` groups by variant and returns one per application, main first. |
+
+Three smaller ones: `bqpp parse` called the HuggingFace adapter online (and with `--force` triggered C3);
+`http.client.IncompleteRead` is an `HTTPException`, not an `OSError`, so a truncated CDN response escaped
+every `FetchError` handler and would abort the sweep; `--dry-run` issued 47 live GETs, and the test that
+"proved" otherwise passed `--source no-such-source` so no adapter ever ran.
+
+**Re-measured after the fixes** (same 45 cached padrões, no network):
+
+| | Before | After |
+|---|---|---|
+| Usable sections | 139 | **149** (119 dissertativas + 30 peças) |
+| Furniture injections in ingested text | 46 | **0** |
+| Corpus total | 341 | **361** |
+| Classification/vetting preserved through `--force` | destroyed | **340 rows intact** |
+| Application variants held | 1 per exam | XXV and XX now carry both |
+
+Coverage: T1.3 1→2, T2.2 23→25, T2.7 26→30, T4.2 69→73. T3.3 remains the only empty subtopic.
+
+---
+
 ## M2 Definition of Done
 
 - `bqpp harvest --source oab-2f-penal` fetches 45 padrões, obeying ≤ 1 req/s, writing a `harvest_manifest` row per file, and re-running downloads nothing.

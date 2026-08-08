@@ -77,6 +77,17 @@ def test_history_surfaces_the_note(tmp_path):
 
 # ---- M2: adapter dispatch and the parse command ---------------------------
 
+def _isolate_cache(monkeypatch, tmp_path):
+    """Point the fetch cache at a cold tmp dir for this test."""
+    from bqpp.config import load_settings
+
+    settings = load_settings().model_copy(deep=True)
+    settings.raw_dir = tmp_path / "raw"
+    settings.data_dir = tmp_path / "data"
+    settings.export_dir = tmp_path / "export"
+    settings.shortlist_dir = tmp_path / "shortlists"
+    monkeypatch.setattr("bqpp.cli.load_settings", lambda *a, **k: settings)
+
 def test_parse_is_registered_with_the_other_spec_commands():
     """Spec §12 lists `parse`; it had no implementation until M2."""
     assert "parse" in runner.invoke(app, ["--help"]).stdout
@@ -89,15 +100,19 @@ def test_parse_supports_dry_run_and_verbose():
 
 
 def test_harvest_dry_run_opens_no_socket_and_writes_nothing(tmp_path, monkeypatch):
+    """Uses the REAL source id. The earlier version passed --source no-such-source,
+    which matched nothing in sources.yaml, so the exploding opener was never reached
+    and the test asserted nothing at all."""
     import bqpp.harvest.http as http_mod
 
     def explode(*a, **k):  # pragma: no cover - the point is that it never runs
         raise AssertionError("--dry-run must not reach the network")
 
     monkeypatch.setattr(http_mod, "_urllib_opener", explode)
+    _isolate_cache(monkeypatch, tmp_path)  # a warm real cache must not mask a regression
     db_path = tmp_path / "dry.sqlite"
     result = runner.invoke(
-        app, ["harvest", "--source", "no-such-source", "--dry-run", "--db", str(db_path)]
+        app, ["harvest", "--source", "oab-2f-penal", "--dry-run", "--db", str(db_path)]
     )
     assert result.exit_code == 0, result.output
 
@@ -107,6 +122,22 @@ def test_harvest_dry_run_opens_no_socket_and_writes_nothing(tmp_path, monkeypatc
     db.init_schema()
     assert list(db.iter_questions()) == []
     db.close()
+
+
+def test_parse_does_not_run_adapters_that_have_no_offline_mode(tmp_path, monkeypatch):
+    """`bqpp parse` used to call the HuggingFace adapter online; with --force that
+    re-ingested every HF row from scratch and wiped its classification and vetting."""
+    import bqpp.harvest.hf_datasets as hf
+
+    def explode(*a, **k):  # pragma: no cover
+        raise AssertionError("parse must not reach HuggingFace")
+
+    monkeypatch.setattr(hf, "_download_parquet", explode)
+    monkeypatch.setattr("bqpp.harvest.http._urllib_opener", explode)
+    _isolate_cache(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["parse", "--db", str(tmp_path / "p.sqlite")])
+    assert result.exit_code == 0, result.output
+    assert "no offline mode" in result.stdout
 
 
 def test_an_unknown_adapter_is_reported_not_crashed(tmp_path, monkeypatch):

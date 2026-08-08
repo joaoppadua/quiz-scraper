@@ -86,9 +86,23 @@ class Database:
         self.conn.commit()
         return True
 
+    # Columns owned by the classify/vet stages, not by the harvest that re-parses a
+    # question's raw content. Those stages have their own --force.
+    _STAGE_COLUMNS = (
+        "discipline", "subtopic_ids", "difficulty", "classified_note", "classify_model",
+        "classified_at", "vet_status", "vet_reasons", "pedagogy_note", "vet_model", "vetted_at",
+    )
+
     def upsert_question(self, q: Question, force: bool = False) -> bool:
-        if self._exists("questions", q.id) and not force:
+        exists = self._exists("questions", q.id)
+        if exists and not force:
             return False
+        if exists:
+            # `harvest --force` / `parse --force` refresh the raw content. Carrying the
+            # existing classification and vetting forward keeps that from silently
+            # throwing away every LLM call already spent on the corpus. A caller that
+            # supplies its own classification (bqpp seed) still wins.
+            q = self._carry_stage_fields(q)
         self.conn.execute(
             "INSERT OR REPLACE INTO questions "
             "(id, source_doc_id, question_number, format, stem, choices, answer_key, "
@@ -106,6 +120,30 @@ class Database:
         )
         self.conn.commit()
         return True
+
+    def _carry_stage_fields(self, q: Question) -> Question:
+        row = self.conn.execute(
+            f"SELECT {', '.join(self._STAGE_COLUMNS)} FROM questions WHERE id=?", (q.id,)
+        ).fetchone()
+        if row is None:
+            return q
+        previous = self._to_question(
+            self.conn.execute("SELECT * FROM questions WHERE id=?", (q.id,)).fetchone()
+        )
+        updates: dict[str, Any] = {}
+        if q.classified_at is None:
+            updates.update(
+                discipline=previous.discipline, subtopic_ids=previous.subtopic_ids,
+                difficulty=previous.difficulty, classified_note=previous.classified_note,
+                classify_model=previous.classify_model, classified_at=previous.classified_at,
+            )
+        if q.vetted_at is None and q.vet_status == "unvetted":
+            updates.update(
+                vet_status=previous.vet_status, vet_reasons=previous.vet_reasons,
+                pedagogy_note=previous.pedagogy_note, vet_model=previous.vet_model,
+                vetted_at=previous.vetted_at,
+            )
+        return q.model_copy(update=updates) if updates else q
 
     def update_classification(self, qid: str, **f: Any) -> None:
         self.conn.execute(

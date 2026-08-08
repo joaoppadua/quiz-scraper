@@ -109,20 +109,36 @@ def parse_exam_index(html: str) -> list[IndexEntry]:
     return [IndexEntry(href=href.strip(), label=_text(label)) for href, label in _ANCHOR.findall(html)]
 
 
-def select_penal_padrao(entries: list[IndexEntry]) -> tuple[IndexEntry, str] | None:
-    """Pick this exam's Direito Penal padrão, preferring the definitivo.
+def select_penal_padroes(entries: list[IndexEntry]) -> list[tuple[IndexEntry, str]]:
+    """One Direito Penal padrão per application variant, preferring the definitivo.
 
-    Returns the entry and which rung of the ladder it came from, so the choice is
-    recorded as provenance rather than silently made: 34 exams publish a
-    definitivo, 11 only a preliminary padrão, and one (the 47º, mid-cycle) neither.
+    An exam can be applied more than once — XXV has a Porto Alegre/RS application and
+    XX a Reaplicação in Porto Velho/RO, each with its own questions. The index is
+    newest-first and the reaplicação is published last, so picking a single best entry
+    silently harvested the reaplicação and never requested the main application at all.
+    The main variant is returned first.
+
+    Each result carries the rung it came from, so the choice is recorded as provenance
+    rather than silently made: 34 exams publish a definitivo, 11 only a preliminary
+    padrão, and one (the 47º, mid-cycle) neither.
     """
-    padroes = [e for e in entries if _PADRAO.search(e.label)]
-    if not padroes:
-        return None
-    definitivos = [e for e in padroes if "definitiv" in e.label.lower()]
-    if definitivos:
-        return definitivos[0], "definitivo"
-    return padroes[0], "plain"
+    by_variant: dict[str | None, list[IndexEntry]] = {}
+    for e in entries:
+        if _PADRAO.search(e.label):
+            by_variant.setdefault(e.variant, []).append(e)
+
+    chosen: list[tuple[IndexEntry, str]] = []
+    for variant in sorted(by_variant, key=lambda v: (v is not None, v or "")):
+        group = by_variant[variant]
+        definitivos = [e for e in group if "definitiv" in e.label.lower()]
+        chosen.append((definitivos[0], "definitivo") if definitivos else (group[0], "plain"))
+    return chosen
+
+
+def select_penal_padrao(entries: list[IndexEntry]) -> tuple[IndexEntry, str] | None:
+    """The main application's padrão, or None. Thin wrapper over select_penal_padroes."""
+    padroes = select_penal_padroes(entries)
+    return padroes[0] if padroes else None
 
 
 def _text(fragment: str) -> str:
@@ -259,7 +275,9 @@ def harvest_source(
         cache_dir=settings.raw_dir / "oab",
         db=None if dry_run else db,
         min_interval=float(p.get("min_interval_seconds", 1.5)),
-        offline=offline,
+        # --dry-run means "do everything except write", and writing includes writing to
+        # someone else's server logs. It reports from the cache or reports nothing.
+        offline=offline or dry_run,
     )
     try:
         seed = fetcher.get(p["seed_url"]).body.decode("utf-8", "replace")
@@ -279,27 +297,29 @@ def harvest_source(
         except FetchError as exc:
             log.error("%s: %s", exam.label, exc)
             continue
-        chosen = select_penal_padrao(parse_exam_index(index_html))
+        chosen = select_penal_padroes(parse_exam_index(index_html))
         if not chosen:
             log.info("%s: no Direito Penal padrão published", exam.label)
             continue
-        index_entry, rung = chosen
-        if dry_run:
-            log.info("[dry-run] %s -> %s (%s)", exam.label, index_entry.label, rung)
-            continue
-        try:
-            pdf = fetcher.get(index_entry.href)
-        except FetchError as exc:
-            log.error("%s: %s", exam.label, exc)
-            continue
-        text = extract_text(pdf.body)
-        health = text_health(text)
-        if health != "ok":
-            log.warning("%s: text layer is %s — skipping", exam.label, health)
-            continue
-        total += ingest_padrao(
-            text, source_id=entry.id, exam=exam, entry=index_entry, rung=rung,
-            banca=p.get("banca"), carreira=p.get("carreira"), db=db, force=force,
-            seen_stems=seen,
-        )
+        for index_entry, rung in chosen:
+            if dry_run:
+                log.info("[dry-run] %s -> %s (%s)", exam.label, index_entry.label, rung)
+                continue
+            try:
+                pdf = fetcher.get(index_entry.href)
+            except FetchError as exc:
+                log.error("%s: %s", exam.label, exc)
+                continue
+            text = extract_text(pdf.body)
+            health = text_health(text)
+            if health != "ok":
+                log.warning("%s: text layer is %s — skipping", exam.label, health)
+                continue
+            total += ingest_padrao(
+                text, source_id=entry.id, exam=exam, entry=index_entry, rung=rung,
+                banca=p.get("banca"), carreira=p.get("carreira"), db=db, force=force,
+                seen_stems=seen,
+            )
+    if not exams:
+        log.error("%s: the index yielded no exams — the site layout may have changed", entry.id)
     return total

@@ -139,3 +139,25 @@ def test_the_shipped_template_is_valid_and_empty():
     from bqpp.config import CONFIG_DIR
 
     assert load_seeds(CONFIG_DIR / "seed_questions.yaml") == []
+
+
+def test_an_entry_without_a_key_is_rejected(tmp_path, db):
+    """A positional fallback key made question identity depend on list order, so
+    deleting or inserting an entry could re-point a usage_log row at other content."""
+    p = tmp_path / "nokey.yaml"
+    entry = {**SEED["questions"][0]}
+    del entry["key"]
+    p.write_text(yaml.safe_dump({"questions": [entry]}, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(SeedError, match="key"):
+        ingest_seeds(load_seeds(p), db=db, taxonomy=load_taxonomy())
+
+
+def test_duplicate_keys_are_rejected(tmp_path, db):
+    p = tmp_path / "dupe.yaml"
+    p.write_text(
+        yaml.safe_dump({"questions": [SEED["questions"][0], SEED["questions"][0]]},
+                       allow_unicode=True),
+        encoding="utf-8",
+    )
+    with pytest.raises(SeedError, match="t1-1-principios-cautelares"):
+        ingest_seeds(load_seeds(p), db=db, taxonomy=load_taxonomy())

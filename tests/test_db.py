@@ -84,3 +84,64 @@ def test_stats_on_empty_db(tmp_path):
     s = d.stats()
     assert s["total"] == 0 and s["by_vet_status"] == {} and s["by_subtopic"] == {}
     d.close()
+
+
+def test_force_reingest_preserves_classification_and_vetting(tmp_path):
+    """`harvest --force` and `parse --force` re-write a question from its raw source.
+    That must not silently discard the LLM work already done on it — the stages have
+    their own --force for that."""
+    from bqpp.models import Question, SourceDocument, VetReason
+
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset")
+    )
+    db.upsert_question(Question(id="q1", source_doc_id="d1", format="mcq4", stem="original"))
+    db.update_classification(
+        "q1", discipline="direito-processual-penal", subtopic_ids=["T1.2"], difficulty="medium",
+        classified_note=None, classify_model="gemini", classified_at="2026-08-08",
+    )
+    db.update_vetting(
+        "q1", vet_status="flagged",
+        vet_reasons=[VetReason(code="resposta_mudou_mas_util", detail="Pacote Anticrime")],
+        pedagogy_note="ótima para discutir em sala", vet_model="gemini", vetted_at="2026-08-08",
+    )
+
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="mcq4", stem="re-parsed"), force=True
+    )
+
+    q = db.get_question("q1")
+    assert q.stem == "re-parsed", "the raw content is refreshed"
+    assert q.discipline == "direito-processual-penal"
+    assert q.subtopic_ids == ["T1.2"]
+    assert q.vet_status == "flagged"
+    assert q.pedagogy_note == "ótima para discutir em sala"
+    assert q.classify_model == "gemini" and q.vet_model == "gemini"
+    db.close()
+
+
+def test_a_caller_that_supplies_a_classification_still_wins(tmp_path):
+    """`bqpp seed --force` sets the classification itself and must not be overridden."""
+    from bqpp.models import Question, SourceDocument
+
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="manual")
+    )
+    db.upsert_question(Question(id="q1", source_doc_id="d1", format="dissertativa", stem="a"))
+    db.update_classification(
+        "q1", discipline="other", subtopic_ids=["T1.1"], difficulty="easy",
+        classified_note=None, classify_model="gemini", classified_at="2026-08-08",
+    )
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="dissertativa", stem="b",
+                 discipline="direito-processual-penal", subtopic_ids=["T3.3"],
+                 classify_model="manual", classified_at="2026-08-09"),
+        force=True,
+    )
+    q = db.get_question("q1")
+    assert q.subtopic_ids == ["T3.3"] and q.classify_model == "manual"
+    db.close()

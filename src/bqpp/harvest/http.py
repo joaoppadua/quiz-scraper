@@ -12,6 +12,7 @@ without a network or a real delay.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import logging
 import time
@@ -134,7 +135,9 @@ class Fetcher:
         log.info("GET %s", url)
         try:
             body, status, headers = self._opener(url, {"User-Agent": self.user_agent})
-        except (urllib.error.URLError, OSError) as exc:
+        except (OSError, http.client.HTTPException) as exc:
+            # IncompleteRead is an HTTPException, not an OSError: a routine CDN hiccup
+            # would otherwise escape every FetchError handler and abort the whole sweep.
             raise FetchError(f"{url}: {exc}") from exc
 
         digest = hashlib.sha256(body).hexdigest()

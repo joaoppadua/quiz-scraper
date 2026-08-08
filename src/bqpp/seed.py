@@ -45,7 +45,19 @@ def load_seeds(path: Path | None = None) -> list[Seed]:
         return []
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     entries = raw.get("questions") or []
-    return [Seed(key=str(e.get("key") or f"seed-{i}"), raw=e) for i, e in enumerate(entries)]
+    seeds, seen = [], set()
+    for i, e in enumerate(entries):
+        # A positional fallback key would make a question's id depend on its place in
+        # the list, so deleting or inserting an entry silently re-points an existing
+        # row — including one the usage_log already records as taught.
+        key = str(e.get("key") or "").strip()
+        if not key:
+            raise SeedError(f"seed entry #{i + 1}: 'key' is required and must be stable")
+        if key in seen:
+            raise SeedError(f"seed entry #{i + 1}: duplicate key {key!r}")
+        seen.add(key)
+        seeds.append(Seed(key=key, raw=e))
+    return seeds
 
 
 def ingest_seeds(
