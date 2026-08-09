@@ -50,3 +50,35 @@ def test_prompt_payload_excludes_pipeline_metadata():
     # stem_context is content, not pipeline metadata: a certo/errado item cannot be
     # classified or vetted without the comando it hangs off.
     assert set(payload) == {"format", "stem", "stem_context", "choices", "answer_key"}
+
+
+# ---- dedup key: boilerplate stems ------------------------------------------
+
+def test_questions_with_boilerplate_stems_are_distinguished_by_their_choices():
+    """MPF writes 'Assinale a opção correta:' as the stem of five different
+    questions and puts the content in the alternatives. Hashing the stem alone
+    collapses them to one and silently drops four."""
+    from bqpp.models import content_hash
+
+    stem = "Assinale a opção correta:"
+    a = content_hash(stem, [{"label": "A", "text": "Medida provisória pode criar tipo penal."},
+                            {"label": "B", "text": "Lei ordinária basta."}])
+    b = content_hash(stem, [{"label": "A", "text": "São excludentes de culpabilidade."},
+                            {"label": "B", "text": "A inimputabilidade não exclui."}])
+    assert a != b
+
+
+def test_the_same_question_still_hashes_the_same():
+    from bqpp.models import content_hash
+
+    choices = [{"label": "A", "text": "Uma alternativa."}]
+    assert content_hash("Pergunta?", choices) == content_hash("  PERGUNTA?  ", choices)
+
+
+def test_choiceless_questions_hash_exactly_as_before():
+    """M2's oab-bench/padrão dedup depends on the stem-prefix behaviour."""
+    from bqpp.models import content_hash, stem_hash
+
+    stem = "Enunciado discursivo qualquer. " * 20
+    assert content_hash(stem) == stem_hash(stem)
+    assert content_hash(stem, None) == stem_hash(stem)

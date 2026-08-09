@@ -26,7 +26,7 @@ from datetime import UTC, date, datetime
 
 from bqpp.db import Database
 from bqpp.harvest.http import Fetcher, FetchError, normalise_url
-from bqpp.models import Question, SourceDocument, question_id, source_doc_id, stem_hash
+from bqpp.models import Question, SourceDocument, content_hash, question_id, source_doc_id
 from bqpp.parse.padrao import segment_padrao
 from bqpp.parse.pdf import extract_text, text_health
 
@@ -212,7 +212,7 @@ def ingest_padrao(
         log.warning("%s: no section anchors — layout predates the convention, skipping", exam.label)
         return 0
 
-    seen = db.stem_hashes() if seen_stems is None else seen_stems
+    seen = db.content_hashes() if seen_stems is None else seen_stems
     doc = _exam_document(
         source_id=source_id, exam=exam, entry=entry, banca=banca, carreira=carreira
     )
@@ -226,7 +226,7 @@ def ingest_padrao(
                 "storing an empty stem", exam.label, section.number, len(section.stem),
             )
             continue
-        key = stem_hash(section.stem)
+        key = content_hash(section.stem)
         qid = question_id(doc.id, section.number)
         # Dedup guards against the same question arriving from *another* source
         # (exams 39º-44º are already held from maritaca-ai/oab-bench). A match on
@@ -287,7 +287,7 @@ def harvest_source(
     exams = parse_exam_ids(seed)
     log.info("%s: %d exams on the index", entry.id, len(exams))
 
-    seen = {} if dry_run else db.stem_hashes()
+    seen = {} if dry_run else db.content_hashes()
     total = 0
     for exam in exams:
         try:

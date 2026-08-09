@@ -21,16 +21,30 @@ def source_doc_id(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def stem_hash(stem: str) -> str:
+def content_hash(stem: str, choices: list[dict[str, str]] | None = None) -> str:
     """Content key for cross-source deduplication.
 
     The same OAB 2ª-fase question reaches the corpus twice — once from
     maritaca-ai/oab-bench and once from the official padrão — with different line
     wrapping and sometimes different case. Normalise both away before hashing, and
     use a prefix: the tail of a stem varies with how the point values were typeset.
+
+    The alternatives are folded in when present, because a stem is not always where
+    the content lives: MPF writes "Assinale a opção correta:" as the stem of five
+    different questions and puts the substance in the alternatives. Hashing the stem
+    alone collapses them into one and silently drops four. A question with no
+    alternatives hashes exactly as it did before, so the discursive dedup is unchanged.
     """
-    normalised = " ".join(stem.split()).casefold()
-    return hashlib.sha256(normalised[:300].encode()).hexdigest()
+    normalised = " ".join(stem.split()).casefold()[:300]
+    if choices:
+        alternatives = " | ".join(" ".join((c.get("text") or "").split()) for c in choices)
+        normalised += " || " + alternatives.casefold()[:300]
+    return hashlib.sha256(normalised.encode()).hexdigest()
+
+
+def stem_hash(stem: str) -> str:
+    """Deprecated alias: `content_hash` with no alternatives."""
+    return content_hash(stem)
 
 
 def question_id(source_doc_id: str, question_number: str) -> str:

@@ -21,7 +21,7 @@ import yaml
 from bqpp.config import CONFIG_DIR
 from bqpp.db import Database
 from bqpp.harvest.http import Fetcher, FetchError
-from bqpp.models import Question, SourceDocument, question_id, source_doc_id, stem_hash
+from bqpp.models import Question, SourceDocument, content_hash, question_id, source_doc_id
 from bqpp.parse.columns import extract_columns
 from bqpp.parse.objetiva import GridError, read_grid, segment_objetiva
 from bqpp.parse.pdf import text_health
@@ -88,7 +88,7 @@ def ingest_prova(
         log.error("%s: %s", entry["id"], exc)
         return 0
 
-    seen = db.stem_hashes() if seen_stems is None else seen_stems
+    seen = db.content_hashes() if seen_stems is None else seen_stems
     doc = _exam_document(source_id=source_id, entry=entry)
     db.upsert_source_document(doc, force=force)
 
@@ -100,7 +100,7 @@ def ingest_prova(
             continue
         answer = grid[number]
         qid = question_id(doc.id, item.number)
-        key = stem_hash(item.stem)
+        key = content_hash(item.stem, item.choices)
         if key in seen and seen[key] != qid:
             log.info("%s q%s: already in the corpus as %s — skipping duplicate",
                      entry["id"], number, seen[key][:12])
@@ -134,7 +134,7 @@ def harvest_source(
         offline=offline or dry_run,
     )
     manifest = load_manifest(CONFIG_DIR / p.get("manifest", "provas_manifest.yaml"))
-    seen = {} if dry_run else db.stem_hashes()
+    seen = {} if dry_run else db.content_hashes()
     total = 0
     for item in manifest:
         if dry_run:

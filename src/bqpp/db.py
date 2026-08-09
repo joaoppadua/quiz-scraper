@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from bqpp.models import Question, SourceDocument, UsageEntry, VetReason, stem_hash
+from bqpp.models import Question, SourceDocument, UsageEntry, VetReason, content_hash
 
 log = logging.getLogger(__name__)
 
@@ -255,7 +255,7 @@ class Database:
         for row in self.conn.execute(sql, params):
             yield self._to_question(row)
 
-    def stem_hashes(self) -> dict[str, str]:
+    def content_hashes(self) -> dict[str, str]:
         """Content key -> question id, for cross-source dedup at ingest time.
 
         Computed in Python rather than stored: the corpus is a few hundred rows,
@@ -263,8 +263,9 @@ class Database:
         whose usage_log is the only record of what was actually taught.
         """
         return {
-            stem_hash(row["stem"]): row["id"]
-            for row in self.conn.execute("SELECT id, stem FROM questions")
+            content_hash(row["stem"], json.loads(row["choices"]) if row["choices"] else None):
+                row["id"]
+            for row in self.conn.execute("SELECT id, stem, choices FROM questions")
         }
 
     def used_question_ids(self, before_semester: str | None = None) -> set[str]:
