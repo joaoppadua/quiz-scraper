@@ -87,7 +87,11 @@ def stats(db: DbOpt = None) -> None:
     coverage.add_column("n", justify="right")
     for sid, label in taxonomy.labels.items():
         n = s["by_subtopic"].get(sid, 0)
-        coverage.add_row(sid, label, f"[red]{n}[/red]" if n == 0 else str(n))
+        if taxonomy.opens_with.get(sid):
+            # Not a gap: opened from doctrine by the professor's decision.
+            coverage.add_row(sid, label, f"[dim]{n} · doutrina[/dim]")
+        else:
+            coverage.add_row(sid, label, f"[red]{n}[/red]" if n == 0 else str(n))
     console.print(coverage)
     database.close()
 
@@ -264,13 +268,17 @@ def curate(
         database, load_taxonomy(), settings,
         semester=semester, subtopic_ids=ids, dry_run=dry_run,
     )
+    # -1 marks a subtopic opened from doctrine (taxonomy `opens_with`), not a gap.
     empty = [k for k, v in written.items() if v == 0]
+    by_doctrine = [k for k, v in written.items() if v == -1]
     out_dir = settings.shortlist_dir / semester.replace(".", "-")
     console.print(f"wrote {len(written)} shortlists to {out_dir}")
     if empty:
         console.print(
             f"[yellow]{len(empty)} subtopics with no candidates: {', '.join(empty)}[/yellow]"
         )
+    if by_doctrine:
+        console.print(f"[dim]{', '.join(by_doctrine)} abertos por doutrina[/dim]")
     database.close()
 
 

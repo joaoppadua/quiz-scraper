@@ -118,8 +118,10 @@ def test_shortlist_is_capped_at_the_configured_size(db, settings):
 
 
 def test_empty_subtopic_still_writes_a_file_saying_so(db, settings):
-    run_curate(db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T3.3"])
-    text = (settings.shortlist_dir / "2026-2" / "T3.3.md").read_text(encoding="utf-8")
+    # T1.3, not T3.3: the latter is now marked `opens_with: doutrina` and is
+    # deliberately not reported as a coverage gap.
+    run_curate(db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T1.3"])
+    text = (settings.shortlist_dir / "2026-2" / "T1.3.md").read_text(encoding="utf-8")
     assert "Nenhum candidato" in text
 
 
@@ -165,3 +167,37 @@ def test_a_question_without_context_renders_unchanged():
     md = render_shortlist("T1.1", "Princípios", [(q, None)], semester="2026.2")
     assert "Enunciado solto." in md
     assert "> _" not in md, "no empty context block"
+
+
+def test_a_doctrine_subtopic_says_so_instead_of_reporting_a_gap(tmp_path):
+    from bqpp.config import load_settings, load_taxonomy
+    from bqpp.curate import run_curate
+    from bqpp.db import Database
+
+    settings = load_settings().model_copy(deep=True)
+    settings.shortlist_dir = tmp_path / "shortlists"
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+
+    written = run_curate(db, load_taxonomy(), settings, semester="2026.2",
+                         subtopic_ids=["T3.3"])
+    md = (settings.shortlist_dir / "2026-2" / "T3.3.md").read_text(encoding="utf-8")
+    assert "doutrina" in md.lower()
+    assert "Amplie o corpus" not in md, "this is not a coverage gap"
+    assert "T3.3" not in [k for k, v in written.items() if v == 0 and k != "T3.3"]
+    db.close()
+
+
+def test_an_ordinary_empty_subtopic_still_reports_a_gap(tmp_path):
+    from bqpp.config import load_settings, load_taxonomy
+    from bqpp.curate import run_curate
+    from bqpp.db import Database
+
+    settings = load_settings().model_copy(deep=True)
+    settings.shortlist_dir = tmp_path / "shortlists"
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    run_curate(db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T1.3"])
+    md = (settings.shortlist_dir / "2026-2" / "T1.3.md").read_text(encoding="utf-8")
+    assert "Nenhum candidato" in md
+    db.close()

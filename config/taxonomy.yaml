@@ -30,7 +30,12 @@ topics:
     subtopics:
       - {id: T3.1, label: "Objetivos e erros do processo penal"}
       - {id: T3.2, label: "Ônus da prova"}
-      - {id: T3.3, label: "Regimes de avaliação da prova e standards probatórios"}
+      # Opened from doctrine and case law, not from an exam question. Around 770
+      # questions across seven certames were searched for standards-of-proof language
+      # (standard probatório, além da dúvida razoável, persuasão racional, íntima
+      # convicção, prova tarifada) with zero hits; what concursos test is art. 155 CPP
+      # valoração. Harvesting is the wrong instrument here, so this is not a gap.
+      - {id: T3.3, label: "Regimes de avaliação da prova e standards probatórios", opens_with: doutrina}
       - {id: T3.4, label: "Provas em espécie"}
       - {id: T3.5, label: "Ilicitude da prova"}
   - id: T4

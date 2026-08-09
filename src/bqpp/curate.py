@@ -57,6 +57,7 @@ def render_shortlist(
     *,
     semester: str,
     picked: set[str] | None = None,
+    opens_with: str | None = None,
 ) -> str:
     """Self-contained markdown: readable on GitHub or Drive with no other context."""
     out = [
@@ -68,15 +69,29 @@ def render_shortlist(
         "",
     ]
     if not ranked:
-        out += [
-            "## Nenhum candidato",
-            "",
-            (
-                "Nenhuma questão vetada foi classificada neste subtópico. "
-                "Amplie o corpus (M2/M3) ou revise a taxonomia."
-            ),
-            "",
-        ]
+        if opens_with:
+            # Not a coverage gap: the professor opens this subtopic another way.
+            out += [
+                f"## Abertura por {opens_with}",
+                "",
+                (
+                    f"Este subtópico é aberto por **{opens_with}**, não por questão de "
+                    "concurso — decisão registrada em `config/taxonomy.yaml`. As bancas "
+                    "cobram o Art. 155 do CPP, não os standards probatórios em si, de "
+                    "modo que a colheita automática não serve aqui."
+                ),
+                "",
+            ]
+        else:
+            out += [
+                "## Nenhum candidato",
+                "",
+                (
+                    "Nenhuma questão vetada foi classificada neste subtópico. "
+                    "Amplie o corpus ou revise a taxonomia."
+                ),
+                "",
+            ]
         return "\n".join(out)
 
     for i, (q, doc) in enumerate(ranked, start=1):
@@ -161,9 +176,13 @@ def run_curate(
         for _, doc in top:
             if doc and doc.carreira:
                 seen_carreiras.add(doc.carreira)
-        written[sid] = len(top)
+        opens_with = taxonomy.opens_with.get(sid)
+        # A subtopic opened from doctrine is not a coverage gap, so it must not be
+        # counted among those "with no candidates".
+        written[sid] = len(top) if not opens_with else -1
         md = render_shortlist(
-            sid, taxonomy.labels[sid], top, semester=semester, picked=picked
+            sid, taxonomy.labels[sid], top, semester=semester, picked=picked,
+            opens_with=opens_with,
         )
         if dry_run:
             log.info("[dry-run] %s: %d candidates", sid, len(top))

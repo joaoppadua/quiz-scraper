@@ -57,6 +57,8 @@ class Taxonomy(BaseModel):
     labels: dict[str, str]
     topic_of: dict[str, str]
     topic_labels: dict[str, str]
+    # subtopic id -> how it is opened when no exam question serves it, e.g. "doutrina"
+    opens_with: dict[str, str] = Field(default_factory=dict)
 
     @property
     def subtopic_ids(self) -> set[str]:
@@ -103,14 +105,18 @@ def load_taxonomy(path: Path | None = None) -> Taxonomy:
     labels: dict[str, str] = {}
     topic_of: dict[str, str] = {}
     topic_labels: dict[str, str] = {}
+    opens_with: dict[str, str] = {}
     for topic in raw["topics"]:
         topic_labels[topic["id"]] = topic["label"]
         for sub in topic["subtopics"]:
             labels[sub["id"]] = sub["label"]
             topic_of[sub["id"]] = topic["id"]
+            if sub.get("opens_with"):
+                opens_with[sub["id"]] = sub["opens_with"]
     return Taxonomy(
         discipline=raw["discipline"],
         labels=labels,
         topic_of=topic_of,
         topic_labels=topic_labels,
+        opens_with=opens_with,
     )

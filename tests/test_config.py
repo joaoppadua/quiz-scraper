@@ -21,3 +21,20 @@ def test_settings_defaults_and_llm_block():
     assert s.llm.fallback_backend == "openai"
     assert s.llm.max_attempts == 3
     assert s.db_path.name == "corpus.sqlite"
+
+
+# ---- M3: subtopics that open from doctrine --------------------------------
+
+def test_opens_with_defaults_to_none():
+    from bqpp.config import load_taxonomy
+
+    t = load_taxonomy()
+    assert t.opens_with.get("T1.2") is None
+
+
+def test_t33_is_marked_as_opening_from_doctrine():
+    """~770 exam questions searched, zero standards-of-proof items. The professor
+    opens this subtopic from doctrine, so it is not a coverage gap."""
+    from bqpp.config import load_taxonomy
+
+    assert load_taxonomy().opens_with.get("T3.3") == "doutrina"
