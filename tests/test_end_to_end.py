@@ -219,3 +219,60 @@ def test_discursive_items_outrank_multiple_choice_in_a_shared_subtopic(tmp_path)
     assert "mcq" not in md, "an MCQ should not displace a rationale-bearing discursive item"
     assert md.count("## ") >= 5
     db.close()
+
+
+# ---- M3: Cebraspe certo/errado and a curated prova reach the shortlists ----
+
+def _m3_router(call):
+    if call["tier"] == "fast":
+        return json.dumps({"discipline": "direito-processual-penal",
+                           "subtopic_ids": ["T3.4"], "difficulty": "medium", "note": ""})
+    return json.dumps({"verdict": "ok", "reasons": [],
+                       "pedagogy_note": "Boa para discutir valoração da prova."})
+
+
+def test_a_certo_errado_item_reaches_a_shortlist_with_its_comando(tmp_path):
+    from bqpp.harvest.cebraspe import ingest_caderno
+
+    settings = load_settings().model_copy(deep=True)
+    settings.shortlist_dir = tmp_path / "shortlists"
+    db = Database.connect(tmp_path / "m3.sqlite")
+    db.init_schema()
+
+    text = (FIX / "cebraspe" / "pc_df_26.txt").read_text(encoding="utf-8")
+    assert ingest_caderno(
+        text, source_id="cebraspe-cadernos",
+        certame={"slug": "PC_DF_26_DELEGADO", "carreira": "delegado",
+                 "certame": "PC/DF Delegado 2026", "exam_year": 2026},
+        url="https://cdn.cebraspe.org.br/x.pdf", banca="CEBRASPE", db=db,
+    ) > 0
+
+    client = LLMClient(FakeBackend(_m3_router))
+    run_classify(db, client, load_taxonomy())
+    run_vet(db, client, load_watchlist())
+    run_curate(db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T3.4"])
+
+    md = (settings.shortlist_dir / "2026-2" / "T3.4.md").read_text(encoding="utf-8")
+    assert "Contexto (comando da banca)" in md
+    assert "julgue" in md.lower(), "the comando must be rendered above the item"
+    assert "CEBRASPE" in md and "PC/DF Delegado 2026" in md
+    assert "certo_errado" in md
+    db.close()
+
+
+def test_the_corpus_now_spans_more_than_one_carreira(tmp_path):
+    """The carreira tie-break in rank_candidates did nothing while every question
+    was OAB; M3 is what activates it."""
+    from bqpp.curate import rank_candidates
+    from bqpp.models import Question, SourceDocument
+
+    ranking = load_settings().ranking
+    oab = SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset",
+                         carreira="oab", exam_year=2025)
+    delegado = SourceDocument(id="d2", source_id="s", url="u", fetched_at="t",
+                              kind="gabarito_justificado", carreira="delegado", exam_year=2025)
+    a = Question(id="a", source_doc_id="d1", format="mcq4", stem="x", vet_status="ok")
+    b = Question(id="b", source_doc_id="d2", format="mcq4", stem="y", vet_status="ok")
+
+    ranked = rank_candidates([(a, oab), (b, delegado)], ranking, seen_carreiras={"oab"})
+    assert ranked[0][1].carreira == "delegado", "an unseen carreira outranks a seen one"

@@ -28,13 +28,14 @@ and `--limit N` when exercising them by hand.
 | **M0** skeleton | ✅ | models, db, settings, LLM layer, CLI |
 | **M1** HF bootstrap | ✅ | `eduagarcia/oab_exams` + `maritaca-ai/oab-bench` → 207 questions, 19/21 subtopics |
 | **M2** OAB 2ª-fase padrões | ✅ | `oab_site` adapter + padrão segmenter → 139 discursivas/peças with banca rationale |
+| **M3** Cebraspe + curated provas | ✅ | `stem_context` migration, column extraction, 4 bancas, 829 questions |
 | **M2.5** 1ª-fase provas | ⬜ | two-column reflow; deferred — MCQ ranks lowest for this method |
-| **M3** Cebraspe + generic PDFs | ⬜ | certo/errado pipeline; needs `item_type` + `stem_context` schema fields |
+| **Source widening** | ⬜ | more official sources; needs its own recon |
 | **M4** polish | ⬜ | carreira-diversity ranking, per-semester stats, JSONL round-trip test |
 
-**T1.1** and **T3.3** stay empty by design — doctrinal topics objective exams avoid. The professor
-seeds them by hand via `config/seed_questions.yaml`; M3/Cebraspe is the durable fix. Do not widen
-scope to chase them.
+**T3.3** stays empty by design — doctrinal topics objective exams avoid. The professor
+opens it from doctrine — it is marked `opens_with: doutrina` in `config/taxonomy.yaml`, and neither
+`stats` nor `curate` treats it as a gap. ~770 questions searched, zero standards-of-proof hits.
 
 The M2 plan and its spec-amendment table, all verified against live sources, are in
 `docs/superpowers/plans/2026-08-08-banco-questoes-pp-m2.md`.
@@ -79,6 +80,12 @@ Violating one of these is a bug even if the tests pass.
   silently disables vetting for them — hence `_exam_document()` in the HF adapter, which splits one
   dataset bundle into one `source_documents` row per exam.
 - **Renaming a taxonomy id orphans `usage_log` rows and existing shortlists.** Adding is safe.
+- **Never construct a source URL by pattern.** MPRS ordinal substitution 404s, MPF's 401s. Literal
+  verified URLs live in `config/provas_manifest.yaml` with the date they were confirmed.
+- **Dedup keys fold in the alternatives.** A stem is not always where the content lives — MPF uses
+  "Assinale a opção correta:" as the stem of five different questions.
+- **Search and classify over comando + stem + rationale**, never the stem alone: for certo/errado
+  items the topic is frequently declared only in the comando.
 - **`curate` excludes only *prior* semesters' picks.** Re-curating mid-selection must not swap out
   the professor's own pick; it stays, marked `✅ Já escolhida`.
 
@@ -95,6 +102,8 @@ Violating one of these is a bug even if the tests pass.
 - Ruff with `E,F,W,I,UP,B,C4,DTZ,ISC,RUF`, line length 100. `DTZ` means datetimes need a timezone —
   `datetime.now(UTC)` everywhere, with one deliberate `# noqa: DTZ011` in `vet.build_prompt` because
   "is this still correct today?" means the professor's wall clock, not UTC's.
+- **Schema changes go through `Database.MIGRATIONS`** — a guarded `ADD COLUMN`, which is O(1) and
+  never rewrites the table. Ship it with a test that opens a database from the previous milestone.
 - One commit per plan task, `feat:`/`fix:`/`chore:` prefix, subject describing the behaviour change.
 
 ## Layout notes

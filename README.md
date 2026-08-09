@@ -130,6 +130,8 @@ the validation error up to `max_attempts` times. Unvalidated output is never sto
 | `eduagarcia/oab_exams` (HF) | 177 OAB 1ª-fase multiple-choice items, 2010–2018 |
 | `maritaca-ai/oab-bench` (HF) | 30 OAB 2ª-fase discursive items, exams 39º–44º, with examiner guidelines |
 | `oab-2f-penal` (OAB site) | **the 2ª-fase Direito Penal *padrão de respostas* for every exam since 2010** |
+| `cebraspe-cadernos` (Cebraspe API) | delegado and defensoria *certo/errado* items, each with the banca's justificativa |
+| `manual-provas` (curated manifest) | MPRS and MPF provas — Ministério Público, estadual and federal |
 
 That third one is the M2 milestone and the richest material in the corpus. Each
 *padrão* carries the question verbatim **and the banca's own `Gabarito
@@ -150,11 +152,29 @@ discursivas and 28 peças — every one with the banca's commentary attached. Th
 ten older exams and the sections whose enunciado is a scanned image are logged
 and skipped rather than ingested half-empty.
 
+### Adding a concurso
+
+Sources that publish an enumerable index are harvested automatically. Everything else
+lives in **`config/provas_manifest.yaml`** as a literal, hand-verified URL with the date
+someone last confirmed it. Adding a concurso is an entry there — no code change.
+
+URLs are never constructed by pattern, and that is deliberate: MPRS ordinal substitution
+returns 404 and MPF's returns 401, so guessing produces confident nonsense.
+
+### Why T3.3 has no questions
+
+`T3.3` is marked `opens_with: doutrina` in `config/taxonomy.yaml`. Around 770 exam
+questions across seven certames were searched for standards-of-proof language — *standard
+probatório*, *além da dúvida razoável*, *persuasão racional*, *íntima convicção*, *prova
+tarifada* — with zero hits. Concursos test art. 155 CPP *valoração*, not the theory. So
+that subtopic is opened from doctrine and case law, `curate` writes a file saying so, and
+`stats` does not count it as a gap.
+
 ## Scope
 
-**M0 + M1 + M2.** Not built yet:
+**M0 + M1 + M2 + M3.** Not built yet:
 
-- **M3** — Cebraspe *certo/errado* and the generic MP/TJ PDF adapter
+- **Source widening** — more official web sources, with its own reconnaissance
 - **M2.5** — the 1ª-fase objective provas (two-column reflow; deferred deliberately,
   since multiple-choice ranks lowest for this teaching method)
 
