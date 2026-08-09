@@ -21,6 +21,13 @@ from bqpp.parse.pdf import _name, _open_stream
 
 log = logging.getLogger(__name__)
 
+# pdfplumber inserts a space when the gap between two characters exceeds this. The
+# default of 3 is too wide for the MPF prova's tight typesetting, which comes out as
+# "Assinaleaopçãocorreta:" — unreadable in a shortlist and useless to the classifier.
+# 1.5 cuts glued runs from 13 to 1 on a sampled MPF page and leaves MPRS and both
+# Cebraspe cadernos byte-identical.
+_X_TOLERANCE = 1.5
+
 
 def strip_format_chars(text: str) -> str:
     """Remove Unicode `Cf` characters (zero-width joiners, BOMs, bidi marks)."""
@@ -39,12 +46,14 @@ def extract_columns(source: Path | str | bytes, *, columns: int = 2) -> str:
             parts: list[str] = []
             for page in pdf.pages:
                 if columns <= 1:
-                    parts.append(page.extract_text() or "")
+                    parts.append(page.extract_text(x_tolerance=_X_TOLERANCE) or "")
                     continue
                 width = page.width / columns
                 for i in range(columns):
                     box = (i * width, 0, (i + 1) * width, page.height)
-                    parts.append(page.crop(box).extract_text() or "")
+                    parts.append(
+                        page.crop(box).extract_text(x_tolerance=_X_TOLERANCE) or ""
+                    )
             return strip_format_chars("\n".join(parts))
     except Exception as exc:
         log.warning("could not extract columns from %s: %s", _name(source), exc)

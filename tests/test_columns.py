@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from bqpp.parse.columns import extract_columns, strip_format_chars
 
 FIX = Path(__file__).parent / "fixtures" / "cebraspe"
@@ -21,21 +19,35 @@ def test_strip_leaves_pt_br_text_untouched():
     assert strip_format_chars(text) == text
 
 
-def test_two_column_reading_order_is_left_then_right():
-    """A sentence in the left column must be contiguous, not interleaved with
-    the right column's text — which is what naive extraction produces."""
+LEFT = ["esquerda um", "esquerda dois", "esquerda tres"]
+RIGHT = ["direita um", "direita dois", "direita tres"]
+
+
+def test_two_column_reading_order_is_left_then_right(two_column_pdf):
+    """The whole point of the module: the left column must be read through before
+    the right one begins. Naive extraction interleaves them line by line."""
+    out = extract_columns(two_column_pdf(LEFT, RIGHT), columns=2)
+    positions = [out.index(t) for t in LEFT + RIGHT]
+    assert positions == sorted(positions), f"columns interleaved: {out!r}"
+    assert out.index("esquerda tres") < out.index("direita um")
+
+
+def test_one_column_mode_interleaves_the_same_page(two_column_pdf):
+    """Proof the columns argument does something: read as one column, the same page
+    comes out line-interleaved, which is the corruption this module exists to avoid."""
+    out = extract_columns(two_column_pdf(LEFT, RIGHT), columns=1)
+    assert out.index("direita um") < out.index("esquerda dois")
+
+
+def test_reading_order_is_not_right_then_left(two_column_pdf):
+    out = extract_columns(two_column_pdf(LEFT, RIGHT), columns=2)
+    assert out.index("esquerda um") < out.index("direita um")
+
+
+def test_a_real_two_column_fixture_keeps_justificativas_intact():
     text = (FIX / "pc_df_26.txt").read_text(encoding="utf-8")
-    assert "JUSTIFICATIVA" in text
-    # A justificativa's own sentence must not be broken by an unrelated item number
     idx = text.find("JUSTIFICATIVA")
-    window = text[idx : idx + 260]
-    assert window.count("JUSTIFICATIVA") == 1
-
-
-def test_single_column_source_extracts_whole_questions():
-    text = (FIX / "mprs_50.txt").read_text(encoding="utf-8")
-    assert "(A)" in text and "(E)" in text
-    assert "MINISTÉRIO PÚBLICO" in text
+    assert text[idx : idx + 260].count("JUSTIFICATIVA") == 1
 
 
 def test_extract_columns_accepts_bytes_and_paths(tmp_path, one_page_pdf):
@@ -53,8 +65,4 @@ def test_a_broken_pdf_returns_empty_rather_than_raising(tmp_path):
     assert extract_columns(broken) == ""
 
 
-@pytest.mark.parametrize("columns", [1, 2])
-def test_column_count_is_respected(tmp_path, columns, one_page_pdf):
-    pdf = tmp_path / "s.pdf"
-    pdf.write_bytes(one_page_pdf("Texto"))
-    assert isinstance(extract_columns(pdf, columns=columns), str)
+

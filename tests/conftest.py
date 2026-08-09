@@ -37,6 +37,46 @@ def _one_page_pdf(text: str) -> bytes:
     return bytes(out)
 
 
+def _two_column_pdf(left: list[str], right: list[str]) -> bytes:
+    """A single page with two text columns, for exercising column-aware extraction."""
+    lines = []
+    for i, text in enumerate(left):
+        lines.append(f"BT /F1 10 Tf 60 {740 - i * 16} Td ({text}) Tj ET")
+    for i, text in enumerate(right):
+        lines.append(f"BT /F1 10 Tf 330 {740 - i * 16} Td ({text}) Tj ET")
+    stream = "\n".join(lines).encode("latin-1")
+    objects = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        (
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]"
+            b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>"
+        ),
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+        b"<</Length %d>>\nstream\n%s\nendstream" % (len(stream), stream),
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n" % (len(objects) + 1)
+    out += b"0000000000 65535 f \n"
+    for off in offsets:
+        out += b"%010d 00000 n \n" % off
+    out += b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1, xref,
+    )
+    return bytes(out)
+
+
+@pytest.fixture
+def two_column_pdf():
+    """Factory: `two_column_pdf(["left 1", ...], ["right 1", ...]) -> bytes`."""
+    return _two_column_pdf
+
+
 @pytest.fixture
 def one_page_pdf():
     """Factory: `one_page_pdf("some text") -> bytes`."""

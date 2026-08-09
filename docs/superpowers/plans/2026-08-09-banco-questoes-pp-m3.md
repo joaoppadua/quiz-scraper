@@ -95,7 +95,7 @@ tests/
 
 **Files:** Modify `src/bqpp/models.py`, `src/bqpp/db.py`, `src/bqpp/curate.py`, `src/bqpp/export.py`. Test: `tests/test_migration.py`, extend `tests/test_db.py`, `tests/test_curate.py`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - Opening a database created by the **M2 schema** (build one by executing the previous `SCHEMA` string) and calling `init_schema()` adds `stem_context` and preserves every existing row, including `usage_log`.
   - Running `init_schema()` twice is a no-op — no duplicate-column error.
   - A `Question` round-trips `stem_context` through `upsert_question` / `get_question`.
@@ -103,16 +103,16 @@ tests/
   - `curate.render_shortlist` prints the context **above** the stem, visually distinguished, and omits the block entirely when it is NULL.
   - `export_jsonl` includes it.
   - **Regression for C10:** two items sharing one 480-char comando but with different item text produce **different** `stem_hash` values when the comando is in `stem_context` rather than prefixed to `stem`.
-- [ ] **Step 2:** Implement. The migration is a guarded `ALTER TABLE`, run inside `init_schema()` after `executescript(SCHEMA)`:
+- [x] **Step 2:** Implement. The migration is a guarded `ALTER TABLE`, run inside `init_schema()` after `executescript(SCHEMA)`:
   ```python
   cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(questions)")}
   if "stem_context" not in cols:
       self.conn.execute("ALTER TABLE questions ADD COLUMN stem_context TEXT")
   ```
   Add the column to `SCHEMA` too, so fresh databases get it directly.
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** **Back up the live database before running anything against it** (`cp data/corpus.sqlite data/corpus.sqlite.pre-m3.bak`), then `uv run bqpp stats` to confirm the migration applied cleanly to the real 361-row corpus.
-- [ ] **Step 5:** Commit — `feat: stem_context column and the first guarded schema migration`.
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** **Back up the live database before running anything against it** (`cp data/corpus.sqlite data/corpus.sqlite.pre-m3.bak`), then `uv run bqpp stats` to confirm the migration applied cleanly to the real 361-row corpus.
+- [x] **Step 5:** Commit — `feat: stem_context column and the first guarded schema migration`.
 
 **Requirements:** `ADD COLUMN` is O(1) and non-destructive, but this is the first time the project migrates a database whose `usage_log` is the only record of what was taught. The test that opens an M2-era database is the point of this task.
 
@@ -124,14 +124,14 @@ tests/
 
 **Interfaces:** `extract_columns(source, *, columns: int = 2) -> str`; `strip_format_chars(text) -> str`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `strip_format_chars` removes Unicode `Cf` characters and leaves ordinary pt-BR text untouched (C15).
   - With `columns=1` the function is equivalent to M2's `extract_text` plus the `Cf` strip.
   - Against a committed two-column fixture, reading order is left-column-then-right: a sentence that spans lines in the left column is contiguous, and no right-column text is interleaved into it.
   - A page whose crop yields nothing does not raise.
-- [ ] **Step 2:** Implement by cropping each page at its midpoint with pdfplumber and concatenating left then right. Verified sufficient for all four seed documents; a word-clustering splitter is **not** needed and must not be built speculatively.
-- [ ] **Step 3:** `uv run pytest tests/test_columns.py -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: column-aware PDF extraction with invisible-character stripping`.
+- [x] **Step 2:** Implement by cropping each page at its midpoint with pdfplumber and concatenating left then right. Verified sufficient for all four seed documents; a word-clustering splitter is **not** needed and must not be built speculatively.
+- [x] **Step 3:** `uv run pytest tests/test_columns.py -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: column-aware PDF extraction with invisible-character stripping`.
 
 ---
 
@@ -141,7 +141,7 @@ tests/
 
 **Interfaces:** `segment_caderno(text) -> list[CadernoItem]` with `.number`, `.comando`, `.stem`, `.answer_key` (`"C"`/`"E"`), `.rationale`, `.usable`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `PC_DF_26` yields **120 items**, each with a rationale and an answer key; the CERTO/ERRADO split is 65/55.
   - `DP_DF_19` yields its items **despite having no `<FimJust>` sentinel** — the C8 regression test.
   - A `<FimJust>` sentinel, where present, never leaks into `stem` or `rationale`.
@@ -149,9 +149,9 @@ tests/
   - **The short-comando gate (the professor's scope decision):** an item whose comando is a topic sentence is `usable`; one hanging off a multi-paragraph fact pattern is not. Test both against real fixture blocks, and pin the threshold as a named constant.
   - An item whose text is a lowercase fragment is still stored with its comando intact, so it remains intelligible.
   - Page furniture (`-- PROVA OBJETIVA --`, page numbers, the caderno's instruction boilerplate) never reaches `stem` or `rationale`.
-- [ ] **Step 2:** Implement. Segment on `^\s*(\d{1,3})\s+(?=\S)`; verdict from `JUSTIFICATIVA\s*[-–]\s*(CERTO|ERRADO)`; comando is the prose preceding the first item of a block, typically ending `julgue os itens...`.
-- [ ] **Step 3:** `uv run pytest tests/test_caderno.py -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: Cebraspe combined-caderno reader with short-comando gate`.
+- [x] **Step 2:** Implement. Segment on `^\s*(\d{1,3})\s+(?=\S)`; verdict from `JUSTIFICATIVA\s*[-–]\s*(CERTO|ERRADO)`; comando is the prose preceding the first item of a block, typically ending `julgue os itens...`.
+- [x] **Step 3:** `uv run pytest tests/test_caderno.py -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: Cebraspe combined-caderno reader with short-comando gate`.
 
 ---
 
@@ -161,16 +161,16 @@ tests/
 
 **Interfaces:** `parse_seed(json_bytes) -> list[Certame]`; `parse_manifest(json_bytes) -> list[Artifact]`; `select_combined_caderno(artifacts) -> Artifact | None`; `cdn_url(slug, artifact) -> str`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `parse_seed` flattens the **4 fase groups** into 490 events (C5) — a naive read returns 4 and must fail this test.
   - `cdn_url` ignores `tipoExtensaoArquivo` and never produces `.pdf.pdf` (C6).
   - `cdn_url` percent-encodes names with spaces and accents, preserving case.
   - `select_combined_caderno` finds `PC_DF_26` by its description **and** `DP_DF_19` by its `_C_JUST.PDF` filename (C7).
   - It returns `None` for `TJ_PR_16_JUIZ`-style manifests whose description merely contains both words — the false-positive regression.
   - An empty body (HTTP 204 for an unknown slug) is treated as not-found, not a JSON parse error (C11).
-- [ ] **Step 2:** Implement. Add the `cebraspe-cadernos` source entry with an **explicit certame allow-list** — `PC_DF_26_DELEGADO`, `DP_DF_19_DEFENSOR` — plus the seed/event URL templates and `columns: 2`.
-- [ ] **Step 3:** `uv run pytest tests/test_cebraspe.py -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: Cebraspe API client with content-asserted genre selection`.
+- [x] **Step 2:** Implement. Add the `cebraspe-cadernos` source entry with an **explicit certame allow-list** — `PC_DF_26_DELEGADO`, `DP_DF_19_DEFENSOR` — plus the seed/event URL templates and `columns: 2`.
+- [x] **Step 3:** `uv run pytest tests/test_cebraspe.py -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: Cebraspe API client with content-asserted genre selection`.
 
 **Requirements:** The allow-list is explicit config, per spec §6. Discovery over all 490 events is **not** wired into `harvest` — it was used once to build the allow-list, and re-running it belongs in the deferred milestone.
 
@@ -180,16 +180,16 @@ tests/
 
 **Files:** Modify `src/bqpp/harvest/cebraspe.py`, `src/bqpp/cli.py`. Test: extend `tests/test_cebraspe.py`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - One `SourceDocument` per certame: `kind="gabarito_justificado"`, `banca="CEBRASPE"`, `carreira` from config (`delegado`, `defensoria`), `exam_year` from the certame, `certame` human-readable.
   - Questions get `format="certo_errado"`, `answer_key` `"C"`/`"E"`, `answer_rationale` populated, and `stem_context` holding the comando.
   - Items failing the short-comando gate are **skipped and logged**, never stored.
   - **Content assertion (C7):** a downloaded file yielding fewer than 20 justificativas is rejected with a loud error rather than ingested as an empty certame.
   - Idempotent; `--force` re-ingests without destroying classification or vetting.
   - Dedup by `stem_hash` still works — and the C10 regression holds on real data: items sharing a comando produce distinct hashes.
-- [ ] **Step 2:** Implement; register the adapter in `cli._adapters()` and add it to `_OFFLINE_CAPABLE` so `bqpp parse` covers it.
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: ingest Cebraspe combined cadernos`.
+- [x] **Step 2:** Implement; register the adapter in `cli._adapters()` and add it to `_OFFLINE_CAPABLE` so `bqpp parse` covers it.
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: ingest Cebraspe combined cadernos`.
 
 ---
 
@@ -199,16 +199,16 @@ tests/
 
 **Interfaces:** `segment_objetiva(text) -> list[ObjetivaItem]` (`.number`, `.stem`, `.choices`, `.usable`); `read_grid(text, *, style) -> dict[int, str]` where `style` is `"paired_rows"` (Cebraspe) or `"interleaved"` (MPRS/MPF); `ANNULMENT_TOKENS: dict[str, set[str]]`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - MPRS yields **100 questions**, each with 5 choices labelled `A`–`E`.
   - Its grid reads as 100 entries with `ANULADA` at **1, 18, 20, 35, 36, 45, 79** (C12/C13) — the interleaved four-column regression.
   - The Cebraspe paired-row reader recovers **120 entries, C=59 / E=57 / X=4, annulled at 20/32/45/76**; a per-line regex returns zero and must fail this test (C13).
   - MPF yields items with **4** choices, and `*N` is read as annulment.
   - `read_grid` **raises** when no annulment legend or convention is identified, rather than defaulting to "none annulled" (C12).
   - Choice labels are never confused with the enumerated sub-items (`I-`, `II-`) that appear inside MPRS stems.
-- [ ] **Step 2:** Implement both grid styles and the shared item segmenter.
-- [ ] **Step 3:** `uv run pytest tests/test_objetiva.py -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: A-E prova reader and the two answer-grid conventions`.
+- [x] **Step 2:** Implement both grid styles and the shared item segmenter.
+- [x] **Step 3:** `uv run pytest tests/test_objetiva.py -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: A-E prova reader and the two answer-grid conventions`.
 
 ---
 
@@ -216,15 +216,15 @@ tests/
 
 **Files:** Create `src/bqpp/harvest/generic_pdf.py`, `config/provas_manifest.yaml`, `tests/test_generic_pdf.py`. Modify `config/sources.yaml`, `src/bqpp/cli.py`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - The manifest loads and validates: every entry needs `id`, `url`, `banca`, `carreira`, `certame`, `exam_year`, `format`, `columns`, `grid_style`, `verified_on`. A missing field names the offending entry.
   - A single-file entry (MPRS: prova and grid in one document) and a two-file entry (MPF: prova + separate gabarito) both ingest.
   - Ingestion is idempotent and `--force`-safe.
   - An unreachable URL is logged and **skipped**, and the run continues — the manifest is hand-maintained and will rot.
   - The shipped manifest parses and every entry validates.
-- [ ] **Step 2:** Implement. Ship the manifest with the four verified entries — MPRS 50º, MPF 31º prova + gabarito — each recording its `verified_on` date and, for MPF, the `/view` → `/@@download/file` rule as a comment (C14/C15).
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: curated-manifest adapter for non-enumerable official sources`.
+- [x] **Step 2:** Implement. Ship the manifest with the four verified entries — MPRS 50º, MPF 31º prova + gabarito — each recording its `verified_on` date and, for MPF, the `/view` → `/@@download/file` rule as a comment (C14/C15).
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: curated-manifest adapter for non-enumerable official sources`.
 
 **Requirements:** **Never construct a URL by pattern** (C14). The manifest is the source of truth and adding a concurso is a YAML edit.
 
@@ -234,15 +234,15 @@ tests/
 
 **Files:** Modify `config/taxonomy.yaml`, `src/bqpp/config.py`, `src/bqpp/curate.py`, `src/bqpp/cli.py`. Test: extend `tests/test_config.py`, `tests/test_curate.py`, `tests/test_cli.py`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `Taxonomy` parses an optional `opens_with` on a subtopic and defaults it to `None`.
   - `curate` writes a shortlist for a `opens_with: doutrina` subtopic that says so, instead of "Amplie o corpus (M2/M3) ou revise a taxonomia".
   - `run_curate` does **not** count such a subtopic among those "with no candidates".
   - `bqpp stats` renders its count without the red-zero gap styling.
   - A subtopic with no marker behaves exactly as before.
-- [ ] **Step 2:** Implement, and mark `T3.3` in `taxonomy.yaml` with a comment recording *why* — ~770 questions searched, zero standards-of-proof hits (C9).
-- [ ] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
-- [ ] **Step 4:** Commit — `feat: subtopics that open from doctrine rather than an exam question`.
+- [x] **Step 2:** Implement, and mark `T3.3` in `taxonomy.yaml` with a comment recording *why* — ~770 questions searched, zero standards-of-proof hits (C9).
+- [x] **Step 3:** `uv run pytest -q`; `uv run ruff check .`.
+- [x] **Step 4:** Commit — `feat: subtopics that open from doctrine rather than an exam question`.
 
 **Requirements:** This is a domain decision recorded in config, not a special case in code. Any subtopic may later be marked the same way.
 
@@ -252,18 +252,53 @@ tests/
 
 **Files:** Modify `tests/test_end_to_end.py`, `README.md`, `CLAUDE.md`.
 
-- [ ] **Step 1:** Extend the end-to-end test: Cebraspe fixture → segment → ingest → classify (fake LLM) → vet → curate, asserting a certo/errado item reaches a shortlist with its comando rendered above the stem and the banca's justificativa in the `<details>` block. Add the MPRS path likewise. No network, no real LLM.
-- [ ] **Step 2:** Update `README.md`: the corpus now spans four bancas; what the manifest is and how to add a concurso; why T3.3 opens from doctrine.
-- [ ] **Step 3:** Update `CLAUDE.md`: milestone table, the migration precedent, and the rule that URLs are never constructed by pattern.
-- [ ] **Step 4:** Full verification — `uv run pytest -q`, `uv run ruff check .`.
-- [ ] **Step 5:** **Real run**, after backing up `data/corpus.sqlite`:
+- [x] **Step 1:** Extend the end-to-end test: Cebraspe fixture → segment → ingest → classify (fake LLM) → vet → curate, asserting a certo/errado item reaches a shortlist with its comando rendered above the stem and the banca's justificativa in the `<details>` block. Add the MPRS path likewise. No network, no real LLM.
+- [x] **Step 2:** Update `README.md`: the corpus now spans four bancas; what the manifest is and how to add a concurso; why T3.3 opens from doctrine.
+- [x] **Step 3:** Update `CLAUDE.md`: milestone table, the migration precedent, and the rule that URLs are never constructed by pattern.
+- [x] **Step 4:** Full verification — `uv run pytest -q`, `uv run ruff check .`.
+- [x] **Step 5:** **Real run**, after backing up `data/corpus.sqlite`:
   ```bash
   uv run bqpp harvest --source cebraspe-cadernos -v
   uv run bqpp harvest --source manual-provas -v
   uv run bqpp classify -v && uv run bqpp vet -v
   uv run bqpp curate --semester 2026.2 && uv run bqpp stats
   ```
-- [ ] **Step 6:** Commit — `feat: M3 end-to-end — delegado, defensoria and MP material in the shortlists`.
+- [x] **Step 6:** Commit — `feat: M3 end-to-end — delegado, defensoria and MP material in the shortlists`.
+
+---
+
+## Result and post-review corrections (2026-08-09)
+
+All nine tasks landed; 297 tests green, ruff clean. Corpus **361 → 817** across four bancas —
+FGV 361, CEBRASPE 236, MPF 120, MPRS 100 — covering oab, delegado, defensoria and mp.
+
+An adversarial review of the diff raised 20 findings; **11 survived independent refutation and none
+were refuted**. Four were corrupting the corpus, and the worst was already live:
+
+| | Defect | Consequence |
+|---|---|---|
+| **D1** | `read_grid` was handed the whole 43-page MPRS document (that source ships prova and gabarito in one file) and its cell regex matched ordinary Portuguese — "As questões 1 a 14", "(C) Apenas 3 e 4", margin line numbers — with `setdefault` letting prose beat the real grid on the last page. | **Six wrong answer keys, and item 1 — officially ANULADA — stored with a fabricated key `A`**, so `vet`'s nullified check never fired and it was shortlist-eligible. A grid row is now a line of nothing but cells, matching is case-sensitive, `ANULADA` precedes `A`, and a non-contiguous recovery raises. |
+| **D2** | The final question's last alternative ran to end-of-text. | It absorbed the entire 100-answer grid and rendered it **above** the spoiler block. The body is now bounded at the first grid row. |
+| **D3** | `objetiva` had no furniture stripping at all. | Running heads and page numbers reached 80 stems and choices. Added, with a per-source `furniture:` list in the manifest. |
+| **D4** | An item's rationale ran to the next item mark. | It swallowed the next block's fact pattern and comando — **17 of 58 items in PC/DF** — printed under "Gabarito comentado da banca" with a CEBRASPE attribution the banca never wrote. Now cut at the `<FimJust>` sentinel, or at the next comando's sentence start where the banca prints none. |
+
+Two more, both real: the MPF prova extracted with words glued together (`"Assinaleaopçãocorreta:"`), fixed
+with `x_tolerance=1.5` — verified to leave MPRS and both Cebraspe fixtures byte-identical; and
+`parse/columns.py`, the milestone's declared shared prerequisite, had **zero behavioural coverage** —
+forcing `columns=1` left all 282 tests passing. Replaced with synthetic two-column PDFs that kill both
+mutants.
+
+The corrupted rows do not self-heal, so the 468 M3 questions were deleted and re-harvested from the
+fixed parsers, then re-classified and re-vetted. Verified afterwards: **0 wrong MPRS keys, 0
+annulled-but-keyed, 0 furniture leaks, 0 rationale bleed.**
+
+One process note worth carrying forward: my first attempt at D4 used an abbreviation-tolerant regex,
+which matches *leftmost* and so started comandos inside the previous rationale (after "Min." in a
+citation), dropping DP/DF from 22 usable items to 3. Sentence splitting replaced it. The green suite
+did not catch that — re-measuring against the real fixtures did.
+
+**Known residual:** the first block's comando in each caderno is truncated (2 items per document),
+because cover boilerplate merges into it before the first item mark. Logged, not fixed.
 
 ---
 
