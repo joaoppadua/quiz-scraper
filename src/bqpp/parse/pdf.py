@@ -33,7 +33,7 @@ def extract_text(source: Path | str | bytes) -> str:
     """
     import pdfplumber
 
-    stream = io.BytesIO(source) if isinstance(source, bytes) else source
+    stream = _open_stream(source)
     try:
         with pdfplumber.open(stream) as pdf:
             return "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -51,6 +51,11 @@ def text_health(text: str) -> Health:
         return "no_text_layer"
     noise = len(_CID.findall(text)) * 6 + len(_MOJIBAKE.findall(text))
     return "glyph_unmapped" if noise / len(letters) > _NOISE_THRESHOLD else "ok"
+
+
+def _open_stream(source: Path | str | bytes):
+    """pdfplumber accepts a path or a file-like object; normalise bytes to the latter."""
+    return io.BytesIO(source) if isinstance(source, bytes) else source
 
 
 def _name(source: Path | str | bytes) -> str:
