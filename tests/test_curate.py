@@ -129,3 +129,39 @@ def test_dry_run_writes_no_files(db, settings):
         db, load_taxonomy(), settings, semester="2026.2", subtopic_ids=["T1.2"], dry_run=True
     )
     assert not (settings.shortlist_dir / "2026-2").exists()
+
+
+# ---- M3: shared context above the stem ------------------------------------
+
+def test_context_is_rendered_above_the_stem():
+    """A certo/errado item is a proposition hanging off a comando; without the
+    comando above it, the item is unintelligible on its own."""
+    from bqpp.curate import render_shortlist
+    from bqpp.models import Question, SourceDocument
+
+    q = Question(
+        id="q1", source_doc_id="d1", question_number="87", format="certo_errado",
+        stem_context="Acerca da prova no processo penal, julgue os itens a seguir.",
+        stem="O afastamento da prova pericial pelo magistrado não enseja nulidade.",
+        answer_key="E", answer_rationale="Errado. O livre convencimento motivado...",
+        vet_status="ok",
+    )
+    doc = SourceDocument(id="d1", source_id="cebraspe-cadernos", url="https://cdn.cebraspe.org.br/x",
+                         fetched_at="t", kind="gabarito_justificado", banca="CEBRASPE",
+                         carreira="delegado", certame="PC/DF Delegado 2026", exam_year=2026)
+    md = render_shortlist("T3.4", "Provas em espécie", [(q, doc)], semester="2026.2")
+
+    assert "julgue os itens a seguir" in md
+    assert md.index("julgue os itens a seguir") < md.index("O afastamento da prova pericial")
+    assert "CEBRASPE" in md and "PC/DF Delegado 2026" in md
+
+
+def test_a_question_without_context_renders_unchanged():
+    from bqpp.curate import render_shortlist
+    from bqpp.models import Question
+
+    q = Question(id="q1", source_doc_id="d1", format="dissertativa", stem="Enunciado solto.",
+                 vet_status="ok")
+    md = render_shortlist("T1.1", "Princípios", [(q, None)], semester="2026.2")
+    assert "Enunciado solto." in md
+    assert "> _" not in md, "no empty context block"

@@ -100,6 +100,12 @@ def render_shortlist(
             for r in q.vet_reasons:
                 out.append(f"> - **{r.code}**: {r.detail}")
             out.append("")
+        if q.stem_context:
+            # The comando governs several sibling items; the item alone does not
+            # parse as a question without it.
+            out += ["> **Contexto (comando da banca):**", ""]
+            out += [f"> {line}" for line in q.stem_context.splitlines() if line.strip()]
+            out += [""]
         out += [q.stem, ""]
         if q.choices:
             out += [_fmt_choices(q), ""]

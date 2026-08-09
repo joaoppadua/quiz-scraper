@@ -47,4 +47,6 @@ def test_prompt_payload_excludes_pipeline_metadata():
         vet_status="ok", subtopic_ids=["T1.2"], classify_model="gemini",
     )
     payload = q.to_prompt_payload()
-    assert set(payload) == {"format", "stem", "choices", "answer_key"}
+    # stem_context is content, not pipeline metadata: a certo/errado item cannot be
+    # classified or vetted without the comando it hangs off.
+    assert set(payload) == {"format", "stem", "stem_context", "choices", "answer_key"}

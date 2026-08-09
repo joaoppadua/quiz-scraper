@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from bqpp.models import Question, SourceDocument, UsageEntry, VetReason, stem_hash
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS source_documents (
@@ -20,7 +23,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY,
   source_doc_id TEXT NOT NULL REFERENCES source_documents(id),
   question_number TEXT, format TEXT NOT NULL, stem TEXT NOT NULL,
-  choices TEXT, answer_key TEXT, answer_rationale TEXT,
+  stem_context TEXT, choices TEXT, answer_key TEXT, answer_rationale TEXT,
   nullified INTEGER DEFAULT 0,
   discipline TEXT, subtopic_ids TEXT, difficulty TEXT, classified_note TEXT,
   classify_model TEXT, classified_at TEXT,
@@ -61,9 +64,24 @@ class Database:
         conn.execute("PRAGMA foreign_keys=ON")
         return cls(conn)
 
+    # Columns added after a milestone shipped. SQLite's ADD COLUMN is O(1), rewrites
+    # nothing and defaults existing rows to NULL, so this is safe against the live
+    # corpus — whose usage_log is the only record of what was actually taught.
+    MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+        ("questions", "stem_context", "TEXT"),
+    )
+
     def init_schema(self) -> None:
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        for table, column, decl in self.MIGRATIONS:
+            existing = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                log.info("migrating %s: adding column %s", table, column)
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     def close(self) -> None:
         self.conn.close()
@@ -105,12 +123,12 @@ class Database:
             q = self._carry_stage_fields(q)
         self.conn.execute(
             "INSERT OR REPLACE INTO questions "
-            "(id, source_doc_id, question_number, format, stem, choices, answer_key, "
+            "(id, source_doc_id, question_number, format, stem, stem_context, choices, answer_key, "
             " answer_rationale, nullified, discipline, subtopic_ids, difficulty, classified_note, "
             " classify_model, classified_at, vet_status, vet_reasons, pedagogy_note, vet_model, "
             " vetted_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (q.id, q.source_doc_id, q.question_number, q.format, q.stem,
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (q.id, q.source_doc_id, q.question_number, q.format, q.stem, q.stem_context,
              json.dumps(q.choices, ensure_ascii=False) if q.choices else None,
              q.answer_key, q.answer_rationale, int(q.nullified), q.discipline,
              json.dumps(q.subtopic_ids), q.difficulty, q.classified_note,
@@ -199,6 +217,7 @@ class Database:
         return Question(
             id=row["id"], source_doc_id=row["source_doc_id"],
             question_number=row["question_number"], format=row["format"], stem=row["stem"],
+            stem_context=row["stem_context"],
             choices=json.loads(row["choices"]) if row["choices"] else None,
             answer_key=row["answer_key"], answer_rationale=row["answer_rationale"],
             nullified=bool(row["nullified"]), discipline=row["discipline"],

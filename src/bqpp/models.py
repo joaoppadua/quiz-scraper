@@ -62,6 +62,11 @@ class Question(BaseModel):
     question_number: str | None = None
     format: Format
     stem: str
+    # Shared context a question depends on but does not own. Cebraspe certo/errado
+    # items hang off a "comando" paragraph governing 3-7 siblings; storing it here
+    # rather than prefixing it to `stem` is what keeps stem_hash able to tell those
+    # siblings apart (a real comando outruns the hash window).
+    stem_context: str | None = None
     choices: list[dict[str, str]] | None = None
     answer_key: str | None = None
     answer_rationale: str | None = None
@@ -91,6 +96,7 @@ class Question(BaseModel):
         """
         return {
             "format": self.format,
+            "stem_context": self.stem_context,
             "stem": self.stem,
             "choices": self.choices,
             "answer_key": self.answer_key,
