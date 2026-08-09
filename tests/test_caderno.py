@@ -147,3 +147,45 @@ def test_page_furniture_never_reaches_content(pc_df):
 def test_empty_input_yields_nothing():
     assert segment_caderno("") == []
     assert segment_caderno("texto solto sem itens") == []
+
+
+# ---- regressions found by the M3 adversarial review ------------------------
+
+@pytest.mark.parametrize("fixture", ["pc_df_26.txt", "dp_df_19.txt"])
+def test_a_rationale_never_absorbs_the_next_blocks_comando(fixture):
+    """The rationale ran to the next item mark, so it swallowed whatever Cebraspe
+    printed in between — 17 of 58 items carried a foreign fact pattern, rendered to
+    the professor under 'Gabarito comentado da banca'."""
+    items = segment_caderno((FIX / fixture).read_text(encoding="utf-8"))
+    for it in items:
+        assert "julgue" not in it.rationale.lower(), (
+            f"item {it.number}'s rationale absorbed a comando"
+        )
+
+
+@pytest.mark.parametrize("fixture", ["pc_df_26.txt", "dp_df_19.txt"])
+def test_furniture_never_reaches_the_comando(fixture):
+    """The midpoint column crop splits full-width headers, so '-- PROVA O' was being
+    glued to the front of comandos, and the answer-sheet instruction box was being
+    mistaken for one."""
+    import re
+
+    leak = re.compile(r"PROVA\s+O|OBJETIVA\s*--|Folha de Respostas|Espa[çc]o livre|Edital:", re.I)
+    for it in segment_caderno((FIX / fixture).read_text(encoding="utf-8")):
+        assert not leak.search(it.comando or ""), f"furniture in item {it.number}'s comando"
+        assert not leak.search(it.stem)
+        assert not leak.search(it.rationale)
+
+
+def test_an_abbreviation_does_not_truncate_the_comando():
+    """'Lei n.º 11.343' is not a sentence boundary; treating it as one cut a
+    178-char comando naming two laws down to 63."""
+    text = (
+        "Julgue os itens seguintes, de acordo com o disposto na Lei n.º 11.343/2006 e na "
+        "Lei n.º 13.964/2019, que tratam do processo penal.\n"
+        "1 Uma proposição qualquer sobre o tema.\n"
+        "JUSTIFICATIVA - Certo. Porque sim.\n"
+    )
+    (item,) = segment_caderno(text)
+    assert "13.964" in item.comando, "the comando was truncated at an abbreviation"
+    assert item.comando.startswith("Julgue")

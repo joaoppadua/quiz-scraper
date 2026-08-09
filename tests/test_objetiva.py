@@ -137,3 +137,82 @@ def test_cover_page_instructions_are_not_mistaken_for_questions():
     items = segment_objetiva(text)
     assert [i.number for i in items] == ["1", "2", "3"]
     assert all(len(i.choices) == 4 for i in items)
+
+
+# ---- the grid must not scavenge cells out of prose -------------------------
+
+PROSE = """\
+As questões 1 a 14 referem-se ao texto acima.
+43 A Inquisição constituiu-se em tribunal eclesiástico.
+(C) Apenas 3 e 4 estão corretas.
+Considere as linhas 5, 11, 12 e 13 do texto.
+"""
+
+# A complete interleaved grid, laid out in four columns exactly as MPRS prints it.
+# Complete, because a real grid covers 1..N — a truncated excerpt is not one.
+REAL_GRID = """\
+ 1 ANULADA    4    A       7   C     10    E
+ 2    E       5    C       8   E     11    C
+ 3    A       6    D       9   D     12    B
+"""
+
+
+def test_prose_alone_is_not_a_grid():
+    """A prova body contains number-letter pairs everywhere: 'As questões 1 a 14',
+    '(C) Apenas 3 e 4', margin line numbers. None of it is an answer grid."""
+    with pytest.raises(GridError):
+        read_grid(PROSE, style="interleaved")
+
+
+def test_a_grid_after_prose_wins_over_the_prose():
+    """MPRS ships prova and grid in one file, and the grid is on the last page."""
+    grid = read_grid(PROSE + REAL_GRID, style="interleaved")
+    assert grid[1] is None, "item 1 is ANULADA, not 'A' scavenged from line 43"
+    assert grid[2] == "E" and grid[3] == "A"
+    assert 43 not in grid or grid[43] != "A", "the passage line number is not an answer"
+
+
+def test_lowercase_prose_letters_are_not_answers():
+    with pytest.raises(GridError):
+        read_grid("o item 5 e o item 7 a seguir", style="interleaved")
+
+
+def test_annulled_is_matched_before_the_letter_a():
+    """'1 ANULADA' must not split as ('1','A')."""
+    grid = read_grid(REAL_GRID, style="interleaved")
+    assert grid[1] is None
+
+
+def test_a_non_contiguous_recovery_is_rejected():
+    """Real grids cover 1..N. Scattered numbers mean we matched something else."""
+    with pytest.raises(GridError):
+        read_grid("7 A\n41 B\n99 C\n", style="interleaved")
+
+
+def test_the_last_question_does_not_swallow_the_answer_grid():
+    """A single-file prova carries its grid after the last question; without a bound
+    the final alternative absorbs it and renders it above the spoiler block."""
+    text = (
+        "1. Pergunta?\n(A) um\n(B) dois\n(C) três\n(D) quatro\n(E) cinco\n"
+        " 1 ANULADA    4    A       7   C     10    E\n"
+        " 2    E       5    C       8   E     11    C\n"
+    )
+    (item,) = segment_objetiva(text)
+    assert "ANULADA" not in item.choices[-1]["text"]
+    assert item.choices[-1]["text"] == "cinco"
+
+
+def test_running_heads_are_stripped_from_stems_and_choices():
+    text = (
+        "1. Pergunta?\n(A) um\nMINISTÉRIO PÚBLICO DO ESTADO DO RIO GRANDE DO SUL\n"
+        "(B) dois\nPágina 43\n(C) três\n(D) quatro\n(E) cinco\n"
+    )
+    (item,) = segment_objetiva(text)
+    joined = " ".join(c["text"] for c in item.choices)
+    assert "MINISTÉRIO" not in joined and "Página" not in joined
+
+
+def test_per_source_furniture_comes_from_the_manifest():
+    text = "1. Pergunta?\n(A) um\nTRIBUNAL REGIONAL QUALQUER\n(B) dois\n(C) três\n(D) quatro\n"
+    (item,) = segment_objetiva(text, furniture=["TRIBUNAL REGIONAL"])
+    assert "TRIBUNAL" not in " ".join(c["text"] for c in item.choices)

@@ -77,7 +77,7 @@ def ingest_prova(
     seen_stems: dict[str, str] | None = None,
 ) -> int:
     """Segment one prova, join its answer grid, and write the questions."""
-    items = segment_objetiva(prova_text)
+    items = segment_objetiva(prova_text, furniture=entry.get('furniture'))
     if not items:
         log.warning("%s: no questions segmented", entry["id"])
         return 0

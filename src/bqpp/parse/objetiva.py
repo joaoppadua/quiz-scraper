@@ -35,7 +35,35 @@ _CHOICE = re.compile(r"^[ \t]*\(([A-Ea-e])\)[ \t]*", re.M)
 
 _PAIR_ITEM = re.compile(r"^\s*Item\b(.*)$", re.I)
 _PAIR_GAB = re.compile(r"^\s*Gabarito\b(.*)$", re.I)
-_CELL = re.compile(r"\b(\d{1,3})\s+([A-E]|ANULAD[AO]|N|X)\b", re.I)
+# One "number answer" cell. Deliberately case-sensitive and space-separated:
+# a lowercase "e"/"a" is Portuguese, not an answer, and a cell never straddles a
+# newline. ANULADA comes first so "1 ANULADA" cannot split as ("1", "A").
+_CELL = re.compile(r"(\d{1,3})[ \t]+(ANULAD[AO]|[A-EN]|X)(?![A-Za-zÀ-ÿ])")
+# A grid row is nothing but cells. Prose lines that merely contain a cell-shaped
+# fragment ("As questões 1 a 14", "(C) Apenas 3 e 4", a margin line number) are not.
+_GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-zÀ-ÿ])[ \t]*)+$")
+
+
+# Running heads and page numbers, which sit between questions in the extracted text
+# and otherwise land inside a stem or an alternative.
+_FURNITURE = re.compile(
+    r"^\s*(?:"
+    r"P[áa]gina\s+\d+.*"
+    r"|\d+\s*/\s*\d+"
+    r"|MINIST[ÉE]RIO\s+P[ÚU]BLICO.*"
+    r"|SECRETARIA\s+DE\s+CONCURSOS.*"
+    r"|\d+[°º]\s+CONCURSO.*"
+    r"|PROVA\s+OBJETIVA\s*$"
+    r")\s*$",
+    re.I | re.M,
+)
+
+
+def _clean(block: str, extra: re.Pattern | None = None) -> str:
+    text = _FURNITURE.sub("", block)
+    if extra is not None:
+        text = extra.sub("", text)
+    return "\n".join(line for line in text.splitlines() if line.strip()).strip()
 
 
 class GridError(ValueError):
@@ -95,11 +123,26 @@ def _question_marks(text: str) -> list[re.Match]:
     return best
 
 
-def segment_objetiva(text: str) -> list[ObjetivaItem]:
-    """Split an A-E prova into numbered questions with their alternatives."""
+def segment_objetiva(text: str, *, furniture: list[str] | None = None) -> list[ObjetivaItem]:
+    """Split an A-E prova into numbered questions with their alternatives.
+
+    `furniture` adds per-source running heads to strip, so adding a concurso whose
+    header differs stays a manifest edit rather than a code change.
+    """
     marks = _question_marks(text)
     if not marks:
         return []
+    extra = re.compile("|".join(f"^.*{f}.*$" for f in furniture), re.I | re.M) if furniture else None
+
+    # A single-file prova carries its answer grid after the last question; without
+    # this bound the final alternative swallows the whole grid and renders it to the
+    # professor above the spoiler block.
+    limit = len(text)
+    for line_match in re.finditer(r"^.*$", text[marks[-1].end() :], re.M):
+        if _GRID_ROW.match(line_match.group(0)):
+            limit = marks[-1].end() + line_match.start()
+            break
+    text = text[:limit]
 
     items: list[ObjetivaItem] = []
     for i, m in enumerate(marks):
@@ -108,11 +151,13 @@ def segment_objetiva(text: str) -> list[ObjetivaItem]:
         choices = list(_CHOICE.finditer(body))
         if len(choices) < 4:
             continue                     # a numbered line in prose, not a question
-        stem = body[: choices[0].start()].strip()
+        stem = _clean(body[: choices[0].start()], extra)
         parsed: list[dict[str, str]] = []
         for j, c in enumerate(choices):
             tail = choices[j + 1].start() if j + 1 < len(choices) else len(body)
-            parsed.append({"label": c.group(1).upper(), "text": body[c.end() : tail].strip()})
+            parsed.append(
+                {"label": c.group(1).upper(), "text": _clean(body[c.end() : tail], extra)}
+            )
         if not stem:
             continue
         items.append(ObjetivaItem(number=str(int(m.group(1))), stem=stem, choices=parsed))
@@ -152,11 +197,27 @@ def _read_paired_rows(text: str) -> dict[int, str | None]:
 
 
 def _read_interleaved(text: str) -> dict[int, str | None]:
+    """Cells, taken only from lines that consist entirely of cells.
+
+    MPRS ships the prova and its grid in one file, so this is handed 43 pages of
+    prose in which "number letter" pairs are everywhere. Accepting them produced six
+    wrong answer keys and un-annulled an officially annulled question — the worst
+    outcome this corpus can have, since a wrong key reaches a student as fact.
+    """
     grid: dict[int, str | None] = {}
-    for n, v in _CELL.findall(text):
-        grid.setdefault(int(n), _verdict(v))
+    for line in text.splitlines():
+        if not _GRID_ROW.match(line):
+            continue
+        for n, v in _CELL.findall(line):
+            grid[int(n)] = _verdict(v)        # a later row supersedes an earlier one
     if not grid:
-        raise GridError("no 'number answer' cells found")
+        raise GridError("no grid rows found (a grid row contains nothing but cells)")
+    numbers = sorted(grid)
+    if numbers != list(range(numbers[0], numbers[0] + len(numbers))):
+        raise GridError(
+            f"recovered item numbers are not contiguous ({numbers[0]}..{numbers[-1]}, "
+            f"{len(numbers)} entries) — this is probably not an answer grid"
+        )
     return grid
 
 
