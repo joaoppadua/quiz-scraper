@@ -119,6 +119,11 @@ It must go through `harvest/http.py`'s `Fetcher` so etiquette is enforced in the
 
 For each of the 19 exams report one row: `exam_id`, `year`, whether a Tipo 1 caderno and a gabarito were found, `definitivo` or `preliminar`, `text_health`, item count under the `bare` anchor, whether numbers are contiguous from 1, grid entry count, item↔grid match rate, and count of annulled items.
 
+Also report two cross-source measurements Task 2 needs in order to assert a concrete value rather than a vague one:
+
+- what the **MPRS and MPF** fixtures segment into under the `bare` anchor (item count, and whether the numbers are contiguous). Task 2 pins whatever this measures — that is why the measurement happens here.
+- what the **OAB** caderno segments into under the `punctuated` anchor. Expected `0`; record the actual.
+
 - [ ] **Step 2: Run it and read every row.**
 
 Run: `uv run python scripts/recon_1f.py`
@@ -131,10 +136,20 @@ Rewrite E7–E9 with measured values. Add a new lettered row for every conventio
 
 Hand-check one exam: list every item a domain reader would call criminal or criminal-procedure, then run the seed list from the design doc §5.5 against it. **Report recall explicitly** — how many hand-picked items the gate keeps. Extend the list until recall is complete on that exam, and prefer a false positive over a miss; `classify` is the real discipline filter and can discard, but a dropped item never gets a second chance.
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 5: Extract the two fixtures Tasks 2 and 3 depend on.**
+
+No other task can create these — Task 1 is the only one holding the PDFs. Write **extracted text, never PDFs** (`.gitignore` blocks `tests/fixtures/**/*.pdf`).
+
+`tests/fixtures/oab_1f/exame_43_tipo1.txt` — from `extract_columns(caderno, columns=2)`, trimmed to keep: at least one clearly criminal-procedure item, one clearly non-criminal item (a tributário or civil one, for the gate's negative case), **the annulled item 1**, and enough of the trailing *questionário de percepção* that its `1.`–`10.` restart is present. Renumber nothing — the fixture must keep the real numbering so the longest-run arbiter is genuinely exercised.
+
+`tests/fixtures/oab_1f/exame_43_gabarito.txt` — from `extract_columns(gabarito, columns=1)`, retaining **all four tipo blocks**. Trimming to one block would let a broken implementation pass, which is exactly the E6 failure mode.
+
+Record in the report the item numbers kept and which is which, so Tasks 2, 3 and 6 can assert exact counts.
+
+- [ ] **Step 6: Commit.**
 
 ```bash
-git add scripts/recon_1f.py docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md
+git add scripts/recon_1f.py tests/fixtures/oab_1f/ docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md
 git commit -m "docs: M2.5 recon sweep — 19 OAB 1a-fase exams measured"
 ```
 
@@ -154,7 +169,7 @@ git commit -m "docs: M2.5 recon sweep — 19 OAB 1a-fase exams measured"
   - The OAB fixture under `item_style="bare"` yields items numbered **contiguously from 1**, each with **exactly 4** choices labelled `A`–`D`, and every item `.usable`.
   - The trailing *questionário de percepção* is **excluded**: the fixture carries the questionnaire's own `1.`–`10.` restart, and the longest-sequential-run arbiter must keep the real prova run (E4).
   - **Regression, the important one:** the existing MPRS and MPF fixtures parsed with the default `item_style` produce output **identical** to today — same item count, same numbers, same stems, same choices. Assert on the parsed structures, not on a count alone.
-  - The OAB fixture under the **default** style yields `[]`, and the MPRS fixture under `"bare"` does **not** silently produce a plausible-but-wrong segmentation. Assert whichever is true and pin it.
+  - The OAB fixture under the **default** style, and the MPRS fixture under `"bare"`, both assert the **exact values Task 1 measured** and recorded in its report — item counts and contiguity, not "some" or "few". Do not guess these; read them from the Task 1 report. Pinning the cross-style behaviour is what stops a future widening of either pattern from passing silently.
   - An unknown `item_style` raises rather than falling back to a default.
 
 - [ ] **Step 2: Run the tests and watch them fail.**
