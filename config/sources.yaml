@@ -74,3 +74,33 @@ sources:
       artifact. 45 of 46 exams publish one (34 definitivo, 11 preliminary only);
       the 47º is mid-cycle. Measured yield: 175 sections across 35 exams, 139 of
       them with both a stem and a rationale.
+
+  - id: cebraspe-cadernos
+    adapter: cebraspe
+    # Spec §6 assumes a hand-curated allow-list scraped from HTML. Cebraspe exposes an
+    # unauthenticated JSON API instead (robots.txt disallows nothing; no terms-of-use
+    # page exists on either host), so discovery is three deterministic GETs.
+    seed_url: https://apis.cebraspe.org.br/cebraspe/eventos/tipo/concursos/
+    event_url_template: https://apis.cebraspe.org.br/cebraspe/eventos/{slug}
+    columns: 2
+    min_interval_seconds: 1.5
+    banca: CEBRASPE
+    # Explicit allow-list, per spec §6. Of 88 legal-career certames whose manifests
+    # parse, only these two publish the combined caderno — item text, answer key and
+    # the banca's justificativa in one self-contained file. Sweeping all 490 events was
+    # done once, offline, to build this list; re-running it belongs to the widening
+    # milestone, not to the pipeline.
+    certames:
+      - slug: PC_DF_26_DELEGADO
+        carreira: delegado
+        certame: PC/DF Delegado 2026
+        exam_year: 2026
+      - slug: DP_DF_19_DEFENSOR
+        carreira: defensoria
+        certame: DP/DF Defensor 2019
+        exam_year: 2019
+    notes: >
+      Certo/errado items with per-item banca rationale. Items are governed by a shared
+      comando; it is stored in stem_context, never prefixed to the stem, because a real
+      comando outruns stem_hash's window. Items whose comando points back at narrative
+      the item does not carry are skipped (the professor's scope decision).
