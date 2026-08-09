@@ -1,0 +1,47 @@
+# Official provas that cannot be enumerated, harvested from literal verified URLs.
+#
+# Spec §6 calls this "manually curated direct PDF links", and that is exactly right:
+# URL construction is actively unsafe here. MPRS ordinal substitution (49º, 48º, 51º)
+# returns 404, its own provas index page 404s, and MPF ordinal substitution returns
+# 401. So every URL below was fetched and confirmed by hand, and carries the date.
+#
+# Adding a concurso is an entry here — no code change.
+#
+#   id            stable; the question ids derive from it
+#   url           literal, verified. For MPF (Plone) the listing links end in /view;
+#                 the file is at {path-without-/view}/@@download/file
+#   gabarito_url  omit when the answer grid is inside the prova itself
+#   columns       1 or 2; drives the column-aware extractor
+#   grid_style    interleaved | paired_rows
+#   verified_on   when a human last confirmed the URL resolves to the right document
+
+provas:
+  - id: mprs-50
+    url: https://www.mprs.mp.br/media/areas/concursos/arquivos/50_concurso_ingresso_carreira/prova_preambular_com_gabarito_definitivo.pdf
+    banca: MPRS
+    carreira: mp
+    certame: MPRS 50º Concurso — Promotor de Justiça
+    exam_year: 2025
+    format: mcq5
+    columns: 1
+    grid_style: interleaved
+    verified_on: 2026-08-09
+    notes: >
+      Prova and definitive gabarito in one file; annulled questions are spelled out
+      as ANULADA rather than marked with a token. 100 questions, single column.
+
+  - id: mpf-31
+    url: https://www.mpf.mp.br/o-mpf/concursos/concursos-de-procuradores/31o-concurso/documentos/prova-objetiva/@@download/file
+    gabarito_url: https://www.mpf.mp.br/o-mpf/concursos/concursos-de-procuradores/31o-concurso/documentos/gabarito-oficial/@@download/file
+    banca: MPF
+    carreira: mp
+    certame: MPF 31º Concurso — Procurador da República
+    exam_year: 2025
+    format: mcq4
+    columns: 2
+    grid_style: interleaved
+    verified_on: 2026-08-09
+    notes: >
+      Four options labelled (a)-(d); N marks an annulled question. The PDF carries
+      344 invisible Unicode Cf characters, stripped by the column extractor. This is
+      the most doctrinal source in the corpus — probatory theory lives here.

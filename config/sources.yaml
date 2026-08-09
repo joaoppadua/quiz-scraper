@@ -104,3 +104,14 @@ sources:
       comando; it is stored in stem_context, never prefixed to the stem, because a real
       comando outruns stem_hash's window. Items whose comando points back at narrative
       the item does not carry are skipped (the professor's scope decision).
+
+  - id: manual-provas
+    adapter: generic_pdf
+    # Literal, hand-verified URLs in config/provas_manifest.yaml. Never construct one
+    # by pattern: MPRS ordinal substitution 404s and MPF's returns 401.
+    manifest: provas_manifest.yaml
+    min_interval_seconds: 1.5
+    notes: >
+      Official provas from public bodies that publish their own concursos. Each entry
+      is self-contained — the answer grid is either inside the prova or a companion
+      file named in the entry — so there is no discovery step to break.

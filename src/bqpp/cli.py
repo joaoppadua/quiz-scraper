@@ -122,18 +122,19 @@ def parse(
     _run_adapters(source, db, dry_run=dry_run, force=force, offline=True)
 
 
-_OFFLINE_CAPABLE = {"oab_site", "cebraspe"}
+_OFFLINE_CAPABLE = {"oab_site", "cebraspe", "generic_pdf"}
 
 
 def _adapters() -> dict:
     """Adapter id -> harvest_source callable. Imported lazily: pdfplumber and
     huggingface_hub are heavy, and `bqpp stats` needs neither."""
-    from bqpp.harvest import cebraspe, hf_datasets, oab_site
+    from bqpp.harvest import cebraspe, generic_pdf, hf_datasets, oab_site
 
     return {
         "hf_datasets": hf_datasets.harvest_source,
         "oab_site": oab_site.harvest_source,
         "cebraspe": cebraspe.harvest_source,
+        "generic_pdf": generic_pdf.harvest_source,
     }
 
 
