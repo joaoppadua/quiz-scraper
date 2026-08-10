@@ -614,6 +614,170 @@ def test_banded_tipo1_never_contains_tipo2s_letters():
         assert grid1[item] != grid2[item], f"tipo 1 item {item} leaked tipo 2's letter"
 
 
+# ---- banded: a pair is recognised by its answer row, not by listing whatever
+# ---- may sit between the two rows -----------------------------------------
+
+# Two tipos, ten items each, disagreeing at every item — so a merge of one into
+# the other is visible in the *content*, not only in the entry count. The
+# fix-round-4 defect kept every count correct.
+_TIPO1_TEN = {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A", 7: "B", 8: "C", 9: "D", 10: "E"}
+_TIPO2_TEN = {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B", 7: "C", 8: "D", 9: "E", 10: "A"}
+
+
+@pytest.mark.parametrize(
+    "intruder",
+    [
+        "2",                                  # a bare page number
+        "(*)Questão anulada",                 # the annulment legend — real corpus content
+        "Errata: gabarito retificado",        # an errata note
+        "|",                                  # whatever the next extraction invents
+    ],
+    ids=["bare-page-number", "annulment-legend", "errata-note", "extraction-artifact"],
+)
+def test_banded_an_unlisted_line_between_head_and_answer_rows_does_not_merge_two_tipos(
+    intruder,
+):
+    """Fix-round-4, the Critical finding of the task-3 review. Fix-round-3 paired
+    a head row with its answer row by *skipping the lines between them that are
+    blank or match `_FURNITURE`* — that is, by enumerating what may sit there.
+    `_FURNITURE` knows `Página N`, `N/M`, `PROVA OBJETIVA` and three MP running
+    heads. A bare page number is not on that list; neither is a legend, a
+    footnote, an errata note, or anything a future PDF extraction produces. Nor
+    can any list ever close: three fix rounds were each defeated by an input
+    nobody had enumerated.
+
+    When the skip failed, a genuine tipo heading looked like it had no band pair
+    of its own, `_tipo_blocks` demoted it from block start, and its bands merged
+    into the *previous* tipo's block — so Tipo 2's answer key came back under a
+    Tipo 1 request while Tipo 2 itself raised, with the entry count still
+    perfectly correct (10 here, 80 in a real gabarito). `* Questão anulada` is
+    not a hypothetical intruder: it is line 40 of `exame_43_gabarito.txt`.
+
+    The rule is inverted instead — search a bounded distance forward for the
+    next line that *is* a conforming `_BAND_ANSWER_ROW`. `A`-`E` plus
+    `ANNULMENT_TOKENS` is a closed set; its complement is not."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        f"PROVA TIPO 2\n1 2 3 4 5\n{intruder}\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+    assert read_grid(text, style="banded", tipo=2) == _TIPO2_TEN
+
+
+def test_banded_a_merge_that_would_give_one_item_two_answers_raises():
+    """The forward search for an answer row is bounded (`_BAND_ANSWER_LOOKAHEAD`),
+    and this test spends that bound deliberately: six lines separate Tipo 2's
+    head row from its answer row, so the pair is genuinely not found and Tipo 2
+    is demoted exactly as in the fix-round-4 defect. What must not follow is the
+    defect's *outcome* — a plausible ten-entry grid in which items 6-10 silently
+    carry Tipo 2's letters. Within one tipo's block an item has exactly one
+    answer, so the merge is detectable at the moment it corrupts, and the read
+    refuses instead. This is the safety net that makes the bound's residual a
+    refusal rather than a wrong answer key."""
+    filler = "\n".join(f"linha {i}" for i in range(6))
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        f"PROVA TIPO 2\n1 2 3 4 5\n{filler}\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    with pytest.raises(GridError) as exc_info:
+        read_grid(text, style="banded", tipo=1)
+    assert "two different answers" in str(exc_info.value)
+    with pytest.raises(GridError):
+        read_grid(text, style="banded", tipo=2)
+
+
+def test_banded_stacked_page_furniture_between_head_and_answer_rows_still_pairs():
+    """A page break in a real gabarito emits several lines at once — the 29º's
+    extraction carries four consecutive ones between two tipo blocks. All three
+    below happen to be `_FURNITURE`-shaped, which is now beside the point: what
+    finds the answer row is that it *is* an answer row."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\nPagina 2\n3 / 4\nPROVA OBJETIVA\n"
+        "B C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+    assert read_grid(text, style="banded", tipo=2) == _TIPO2_TEN
+
+
+def test_banded_a_blank_line_between_head_and_answer_rows_still_pairs():
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\n\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+    assert read_grid(text, style="banded", tipo=2) == _TIPO2_TEN
+
+
+# ---- banded: the structural cases the fix rounds must keep intact ----------
+
+
+def test_banded_a_heading_immediately_followed_by_another_heading_raises_for_the_first():
+    """The first heading has no band of its own, so it is not a block start and
+    tipo 1 refuses — it must not instead inherit tipo 2's band."""
+    text = "PROVA TIPO 1\nPROVA TIPO 2\n1 2 3 4 5\nB C D E A\n"
+    with pytest.raises(GridError):
+        read_grid(text, style="banded", tipo=1)
+    assert read_grid(text, style="banded", tipo=2) == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A"}
+
+
+def test_banded_a_tipo_whose_first_band_does_not_start_at_one_raises():
+    """A block whose first band opens at 6 is a fragment, not a block: returning
+    it would hand the caller a partial answer key with no sign that it is one."""
+    with pytest.raises(GridError):
+        read_grid("PROVA TIPO 1\n6 7 8 9 10\nA B C D E\n", style="banded", tipo=1)
+
+
+def test_banded_a_repeated_same_tipo_heading_mid_block_merges_forward():
+    """A running head repeating the tipo mid-block introduces no new block; its
+    bands continue the one already open."""
+    text = "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\nPROVA TIPO 1\n6 7 8 9 10\nA B C D E\n"
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+
+
+def test_banded_a_band_pair_before_any_heading_is_dropped():
+    """Bands above the first heading belong to no tipo, so they are dropped, not
+    attributed to whichever tipo happens to be requested."""
+    text = (
+        "1 2 3 4 5\nX X X X X\n"
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+
+
+def test_banded_a_heading_at_eof_with_no_bands_raises():
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\nPROVA TIPO 2\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+    with pytest.raises(GridError):
+        read_grid(text, style="banded", tipo=2)
+
+
+def test_banded_tipos_appearing_out_of_order_each_read_their_own_block():
+    text = (
+        "PROVA TIPO 2\n1 2 3 4 5\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+    )
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+    assert read_grid(text, style="banded", tipo=2) == _TIPO2_TEN
+
+
+def test_banded_an_all_annulled_answer_row_is_a_valid_band():
+    """A row of nothing but `*` is a legitimate answer row (a whole band annulled
+    on appeal), not a decorative separator, and yields Nones rather than raising."""
+    text = "PROVA TIPO 1\n1 2 3 4 5\n* * * * *\n6 7 8 9 10\nA B C D E\n"
+    assert read_grid(text, style="banded", tipo=1) == {
+        1: None, 2: None, 3: None, 4: None, 5: None,
+        6: "A", 7: "B", 8: "C", 9: "D", 10: "E",
+    }
+
+
+def test_banded_a_decorative_star_row_with_no_head_row_above_it_is_ignored():
+    """The same row shape with no head row above it is not a band at all."""
+    text = "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n* * * * *\n6 7 8 9 10\nA B C D E\n"
+    assert read_grid(text, style="banded", tipo=1) == _TIPO1_TEN
+
 # ---- banded: the second real spelling, plus the correspondência table trap -
 
 

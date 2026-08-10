@@ -83,23 +83,37 @@ _GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-
 # a whole-file structural parse: every heading and every band pair is found
 # once, each pair is assigned to the heading immediately preceding it, and a
 # heading only counts as a real block start if the *first* pair assigned to it
-# opens at item 1.
+# opens at item 1. Which makes `_band_pairs` load-bearing for scoping as well
+# as for reading, and a heading whose own first pair goes unrecognised is
+# demoted and merged into its predecessor — the fix-round-4 defect.
 _TIPO_HEAD = re.compile(
     r"^[ \t]*(?=[^\n]{1,60}$)[^\n]*?\b(?:PROVA[ \t]+TIPO|TIPO|PROVA)[ \t]+0?([1-9])\b[^\n]*$",
     re.M | re.I,
 )
 
 # A band's head row: five or more bare item numbers on their own line. Its answer
-# row is the next non-blank, non-furniture line beneath it — furniture (a running
-# head, a page break) between a head row and its answer row is ordinary at a PDF
-# page break, and tipo headings sit at page breaks too, so `_band_pairs` tolerates
-# it explicitly rather than requiring strict adjacency. Requiring the answer row
-# to be verdict-shaped, not more bare digits, is what keeps a table-shaped pair
-# of integer-only rows (the correspondência table) from ever being read as
-# answers — see `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
+# row is a line of nothing but verdict tokens — a closed set: `A`-`E` plus the
+# annulment tokens. That closure is what `_band_pairs` binds on. Requiring the
+# answer row to be verdict-shaped, not more bare digits, is also what keeps a
+# table-shaped pair of integer-only rows (the correspondência table) from ever
+# being read as answers — see
+# `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
 _BAND_HEAD_ROW = re.compile(r"^[ \t]*\d{1,3}(?:[ \t]+\d{1,3}){4,}[ \t]*$")
 _BAND_TOKEN = r"(?:ANULAD[AO]|[A-EXN*])"
 _BAND_ANSWER_ROW = re.compile(rf"^[ \t]*{_BAND_TOKEN}(?:[ \t]+{_BAND_TOKEN})*[ \t]*$")
+
+# How far below a head row its answer row is allowed to sit. Measured offline
+# across all 19 real gabaritos and both committed fixtures: the answer row is the
+# immediately next line in 336 of 336 bands, so this window is headroom for a
+# page break landing mid-band, not a licence to search the file.
+#
+# It is deliberately narrow, because the two ways to get it wrong are not
+# symmetric. Too *narrow* costs a heading its own first band, which
+# `_tipo_blocks` then demotes and `_read_banded`'s one-answer-per-item check
+# turns into a raised `GridError`. Too *wide* lets an orphaned head row (its own
+# answer row lost in extraction) pair with an unrelated answer row further down,
+# and nothing detects that. Refusing beats defaulting, so the window stays small.
+_BAND_ANSWER_LOOKAHEAD = 4
 
 
 # Running heads and page numbers, which sit between questions in the extracted text
@@ -342,20 +356,57 @@ def _read_interleaved(text: str) -> dict[int, str | None]:
     return grid
 
 
+def _answer_row_below(lines: list[tuple[int, str]], head: int) -> int | None:
+    """Index of the answer row belonging to the head row at `head`, or None.
+
+    The search runs forward at most `_BAND_ANSWER_LOOKAHEAD` lines and stops at
+    the first line that *is* a `_BAND_ANSWER_ROW`. It abandons instead if a new
+    head row or a heading candidate turns up first: a new band or a new block
+    starting means this head row's own answer row is not coming, and pairing
+    across either would attach one band's numbers to another band's letters.
+
+    `_BAND_ANSWER_ROW` is tried before `_BAND_HEAD_ROW` on purpose. The two are
+    disjoint on real input (a head row is bare digits; an answer row never is),
+    so the order changes no outcome — but it keeps the answer-row guard
+    load-bearing, so stubbing it out still breaks
+    `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
+    """
+    for j in range(head + 1, min(head + 1 + _BAND_ANSWER_LOOKAHEAD, len(lines))):
+        line = lines[j][1]
+        if _BAND_ANSWER_ROW.match(line):
+            return j
+        if _BAND_HEAD_ROW.match(line) or _TIPO_HEAD.match(line):
+            return None
+    return None
+
+
 def _band_pairs(text: str) -> list[tuple[int, list[str], list[str]]]:
     """Every band pair in the whole text, in order: `(position, numbers, verdicts)`.
 
-    A pair is a `_BAND_HEAD_ROW` line and the next non-blank, non-furniture line
-    that is `_BAND_ANSWER_ROW`-shaped. Furniture between a head row and its
-    answer row (a running head, a page break) is ordinary — tipo headings sit at
-    page breaks too — so this tolerance is exactly what `_tipo_blocks` needs from
-    "what counts as a pair" as well: fix-round-3 of the task-3 review found that
-    requiring strict adjacency here made a *genuine* tipo heading (head row and
-    answer row split by one page-furniture line) look like it had no pairs of
-    its own, which silently merged two tipos together — the inverse of
-    fix-round-1/2's truncation defect. One definition of a pair, used by both
-    the scope logic and the actual read, is what keeps the two from drifting
-    apart again.
+    A pair is a `_BAND_HEAD_ROW` line and the answer row `_answer_row_below`
+    finds for it.
+
+    The direction of that rule is the point of fix-round-4. Rounds 1-3 of the
+    task-3 review each described the lines *between* a head row and its answer
+    row and were each defeated by a line nobody had described; round 3 paired
+    the two by skipping lines that are blank or match `_FURNITURE`, which knows
+    `Página N`, `N/M`, `PROVA OBJETIVA` and three MP running heads. A bare page
+    number is not on that list. Neither is the `* Questão anulada` legend that
+    is line 40 of `exame_43_gabarito.txt`, nor an errata note, nor whatever the
+    next PDF extraction invents — and no list closes, which is why three rounds
+    in a row were beaten by an unenumerated input. **Furniture cannot be
+    enumerated; an answer row can**, so the search binds on the row it is
+    looking for rather than on the rows it is willing to walk past.
+
+    Failing to pair is not free, and this function does not pretend otherwise:
+    a genuine heading whose own first band is missed is demoted by
+    `_tipo_blocks`, and its bands merge into the previous tipo's block. That is
+    why `_read_banded` refuses a block in which one item receives two different
+    answers — the merge's signature, and the only reason this failure mode was
+    ever silent rather than loud.
+
+    One definition of a pair serves both `_tipo_blocks`'s block detection and
+    the actual read, so the two cannot drift apart.
     """
     lines: list[tuple[int, str]] = []
     pos = 0
@@ -364,20 +415,18 @@ def _band_pairs(text: str) -> list[tuple[int, list[str], list[str]]]:
         pos += len(raw)
 
     pairs: list[tuple[int, list[str], list[str]]] = []
-    i, n = 0, len(lines)
-    while i < n:
+    i = 0
+    while i < len(lines):
         head_pos, head_line = lines[i]
         if not _BAND_HEAD_ROW.match(head_line):
             i += 1
             continue
-        j = i + 1
-        while j < n and (not lines[j][1].strip() or _FURNITURE.match(lines[j][1])):
-            j += 1
-        if j < n and _BAND_ANSWER_ROW.match(lines[j][1]):
-            pairs.append((head_pos, head_line.split(), lines[j][1].split()))
-            i = j + 1
-        else:
+        answer = _answer_row_below(lines, i)
+        if answer is None:
             i += 1
+            continue
+        pairs.append((head_pos, head_line.split(), lines[answer][1].split()))
+        i = answer + 1
     return pairs
 
 
@@ -405,15 +454,33 @@ def _tipo_blocks(text: str) -> dict[int, list[tuple[list[str], list[str]]]]:
        corpus, since the correspondência table's rows never form a valid pair
        at all) does not extend it.
 
-    **Documented residual, not a closed gap**: a stray heading-shaped line
-    immediately followed by a *perfectly well-formed* band pair that itself
-    opens at item 1 is genuinely indistinguishable from a real block start —
-    no rule confined to this text can tell them apart, because by construction
-    it looks exactly like one. The mitigation lives one layer up, at the
-    caller: Task 6 is expected to read all four tipos and cross-check that
-    they recover the same entry count, a signal only available there (task-3
-    fix-round-2 report, "note to Task 6"; that note still applies unchanged
-    here — this residual is the same one, not a new one).
+    **Documented residuals. None of these is closed; they are stated because a
+    named limit is worth more than an implied guarantee.**
+
+    1. A stray heading-shaped line immediately followed by a *perfectly
+       well-formed* band pair that itself opens at item 1 is indistinguishable
+       from a real block start — by construction it looks exactly like one, and
+       no rule confined to this text can tell them apart.
+    2. Step 3 above trusts `_band_pairs` to find a heading's own first band. It
+       searches a bounded distance (`_BAND_ANSWER_LOOKAHEAD`); a head row
+       separated from its answer row by more lines than that is not paired, and
+       its heading is demoted and merged into the previous tipo exactly as in
+       (1). This is the fix-round-4 defect's remaining edge, moved from "any
+       line `_FURNITURE` does not list" to "more intervening lines than any
+       gabarito has ever shown" — narrowed, not eliminated.
+    3. A head row whose own answer row was lost in extraction can pair with an
+       unrelated answer row within that same window.
+
+    (2) and (3) are what `_read_banded`'s one-answer-per-item check exists for:
+    a merge of two tipos' bands re-answers items the block already holds, so it
+    raises instead of returning a plausible grid. That check is a detector, not
+    a proof — it cannot fire if the merged bands happen to fill a gap the
+    preceding block had rather than overlap it.
+
+    The standing mitigation for all three lives one layer up, at the caller:
+    Task 6 is expected to read all four tipos and cross-check that they recover
+    the same entry count, a signal only available there (task-3 fix-round-2
+    report, "note to Task 6").
     """
     headings = [(m.start(), int(m.group(1))) for m in _TIPO_HEAD.finditer(text)]
     pairs = _band_pairs(text)
@@ -471,7 +538,19 @@ def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
                 f"{len(numbers)} numbers vs {len(verdicts)} verdicts"
             )
         for n, v in zip(numbers, verdicts, strict=True):
-            grid[int(n)] = _verdict(v)
+            item, verdict = int(n), _verdict(v)
+            # One tipo answers each item once. A second, different answer for an
+            # item means two tipos' bands have merged into one block — the exact
+            # signature of every scoping defect found in this module, and the
+            # reason they were silent: the merged grid keeps a plausible entry
+            # count and only its *content* is wrong. Refusing beats defaulting.
+            if item in grid and grid[item] != verdict:
+                raise GridError(
+                    f"tipo {tipo} item {item} was given two different answers "
+                    f"({grid[item]!r} then {verdict!r}) — two tipos' bands have "
+                    f"probably merged into one block"
+                )
+            grid[item] = verdict
     if not grid:
         raise GridError(f"no number/letter bands found for tipo {tipo}")
     _check_contiguous(grid)
