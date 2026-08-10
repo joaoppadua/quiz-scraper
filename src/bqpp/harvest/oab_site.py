@@ -151,16 +151,23 @@ _EDITION = re.compile(r"^\s*(\S+)\s+EXAME\b", re.I)
 _EDITION_TRAILING = re.compile(r"EXAME\s+DE\s+ORDEM\s+UNIFICADO\s+(\S+)\s*$", re.I)
 
 
-def _certame(exam_label: str, variant: str | None) -> str:
-    """"44º EXAME DE ORDEM UNIFICADO" -> "OAB 44º Exame (2ª fase)"."""
+def certame_for(exam_label: str, variant: str | None, *, fase: str = "2ª fase") -> str:
+    """"44º EXAME DE ORDEM UNIFICADO" -> "OAB 44º Exame (2ª fase)".
+
+    `fase` is a parameter because the same index pages carry both phases of the same
+    exam: the 1ª-fase adapter (`harvest/oab_1f.py`) reads the identical labels and
+    needs "OAB 44º Exame (1ª fase)". The label grammar — an ordinal in Arabic or
+    Roman numerals, or a trailing "2010.2" — is the fiddly part and is worth having
+    in exactly one place.
+    """
     m = _EDITION.match(exam_label)
     trailing = _EDITION_TRAILING.search(exam_label)
     if trailing:                     # "EXAME DE ORDEM UNIFICADO 2010.2"
-        certame = f"OAB Exame {trailing.group(1)} (2ª fase)"
+        certame = f"OAB Exame {trailing.group(1)} ({fase})"
     elif m:
-        certame = f"OAB {m.group(1)} Exame (2ª fase)"
+        certame = f"OAB {m.group(1)} Exame ({fase})"
     else:
-        certame = f"OAB {exam_label} (2ª fase)"
+        certame = f"OAB {exam_label} ({fase})"
     return f"{certame} — {variant}" if variant else certame
 
 
@@ -187,7 +194,7 @@ def _exam_document(
         kind="gabarito_justificado",
         banca=banca,
         carreira=carreira,
-        certame=_certame(exam.label, variant),
+        certame=certame_for(exam.label, variant),
         exam_year=entry.date.year if entry.date else None,
         local_path=None,
     )

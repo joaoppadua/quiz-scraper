@@ -121,3 +121,171 @@ sources:
       Official provas from public bodies that publish their own concursos. Each entry
       is self-contained — the answer grid is either inside the prova or a companion
       file named in the entry — so there is no discovery step to break.
+
+  - id: oab-1f-penal
+    adapter: oab_1f
+    # Same host and the same two levels of GET as `oab-2f-penal` — the OAB publishes
+    # the 1ª-fase cadernos and gabaritos on the very pages that adapter already walks.
+    # Never construct one of the PDF URLs by pattern: they are opaque CDN UUIDs and
+    # every one of them comes from an <a href> on the exam's own index page.
+    seed_url: https://examedeordem.oab.org.br/EditaisProvas?NumeroExame=0
+    exam_url_template: https://examedeordem.oab.org.br/EditaisProvas?NumeroExame={exam_id}
+    # An exam publishes four shuffled tipos of the same 80 questions. Tipo 1 is the
+    # one the answer grid is written around and the one the correspondence table maps
+    # from, so one tipo is harvested and the other three are only read to cross-check
+    # the grid (see `read_tipo_grid`).
+    tipo: 1
+    # Milestone scope: 29 exams publish a Tipo 1 caderno, 19 of them 2019 or later,
+    # and all 19 of those also publish a 1ª-fase gabarito (Task 1 recon). The older
+    # ten are a separate recon, not a config flip — several are reaplicações whose
+    # index page carries two full administrations, which `select_1f_artifacts`
+    # refuses on purpose. The year itself comes from the caderno's index entry and
+    # is load-bearing: an exam whose entry carries no date is skipped, because a
+    # null exam_year silently disables the law watchlist for the whole exam.
+    min_exam_year: 2019
+    columns: 2
+    format: mcq4
+    # Candidate item anchors, best-of measured per exam (see `choose_item_style`).
+    # 17 of the 19 in-scope cadernos number a question with a bare numeral on its own
+    # line; the XXVIII and XXIX (2019) write "Questão N" instead. One value cannot
+    # cover both, and neither can a per-exam map that a new exam would silently miss.
+    item_style: [bare, questao]
+    # Excluded by name, deliberately. The XXXV (2022) caderno's text layer is unmapped
+    # glyphs — `(cid:N)` — and only 65 of its 80 items come back at all. Worse, 63 of
+    # those 65 pass a per-item health check, so nothing downstream would catch it:
+    # this exclusion is load-bearing, not belt-and-braces.
+    exclude_exam_ids: ["13415"]
+    min_interval_seconds: 1.5
+    banca: FGV
+    carreira: oab
+    # Running heads, page numbers and the trailing "questionário de percepção" the
+    # OAB prints inside the question area. Left in place they are spliced verbatim
+    # into a legal alternative — 1,784 foreign lines across the 18 ingestible exams,
+    # measured offline. Per source, never in `parse/objetiva.py`, which every other
+    # source shares. Fragments are matched line-wise and case-insensitively; the ones
+    # written with ^...$ are whole-line by design, because "EXAME DE ORDEM UNIFICADO"
+    # and "resultado final do exame." also occur inside real questions.
+    furniture:
+      - '^[ \t]*[\wÀ-ÿ]*[ \t]*EXAME\s+D[EO]\s+ORDEM\s+UN\w*[ \t]*$'
+      - '^[ \t]*\w*FICADO\s*[–—-]\s*TIPO\b.*$'
+      - '^[ \t]*PROVA\s+APLICAD\w*[ \t]*$'
+      - '^[ \t]*D?A\s+EM\s+\d{1,2}/\d{1,2}/\d{4}[ \t]*$'
+      - '^[ \t]*.?[ \t]*TIPO\s*(?:0?\d)?\s*[–—-]?\s*BRANCA\b.*$'
+      - '^[ \t]*[–—-]?\s*P[ÁA]GINA\s*\d*[ \t]*$'
+      - '^[ \t]*\d{1,3}[ \t]*$'
+      - 'QUESTION[ÁA]RIO\s+DE\s+PERCEP[ÇC][ÃA]O\s+SOBRE\s+A\s+PRO'
+      - 'Este\s+question[áa]rio\s+[ée]\s+de\s+preenchimento\s+facultativo'
+      - '^[ \t]*exame\.[ \t]*$'
+      - '^[ \t]*resultado\s+final\s+do\s+exame\.[ \t]*$'
+      - 'Como\s+se\s+trata\s+de\s+mera\s+pesquisa'
+      - 'As\s+quest[õo]es\s+t[êe]m\s+como\s+objetivo\s+avaliar\s+a\s+qualidade'
+      - 'adequa[çc][ãa]o\s+d[ae]\s*$'
+      - 'prova\s+que\s+voc[êe]\s+acabou\s+de\s+realizar'
+      - 'Assinale\s+suas\s+respostas\s+nos\s+espa[çc]os\s+pr[óo]prios'
+      - 'd[ae]?\s*sua\s+folha\s+de\s+respostas'
+      - 'A\s+OAB\s+e\s+a\s+FGV\s+agradecem'
+    # Professor-approved. A 1ª-fase caderno is 80 questions across ~14 disciplines with
+    # no headings to bind on, so criminal material is found by vocabulary. Maintained
+    # here, never in code: `is_criminal` takes both values as arguments.
+    min_keyword_hits: 2
+    keep_keywords:
+      - CPP
+      - processo penal
+      - inquérito
+      - flagrante
+      - preventiva
+      - temporária
+      - audiência de custódia
+      - denúncia
+      - queixa-crime
+      - resposta à acusação
+      - absolvição sumária
+      - nulidade
+      - prova ilícita
+      - interceptação
+      - habeas corpus
+      - júri
+      - pronúncia
+      - apelação
+      - recurso em sentido estrito
+      - competência
+      - Ministério Público
+      - delegado
+      - réu
+      - acusado
+      - sentença penal
+      - execução penal
+      - código penal
+      - crime
+      - criminal
+      - delito
+      - penal
+      - pena
+      - dosimetria
+      - prescrição da pretensão punitiva
+      - tipicidade
+      - dolo
+      - culposo
+      - legítima defesa
+      - furto
+      - roubo
+      - homicídio
+      - estelionato
+      - tráfico
+      - lei de drogas
+      - condenação
+      - condenado
+      - absolvição
+      - prisão
+      - delegacia
+      - autoridade policial
+      - vítima
+      - ofendido
+      - querelante
+      - querelado
+      - indiciado
+      - investigado
+      - defensor
+      - defensoria pública
+      - juizado especial criminal
+      - transação penal
+      - suspensão condicional
+      - acordo de não persecução
+      - boletim de ocorrência
+      - reincidente
+      - regime fechado
+      - regime semiaberto
+      - regime aberto
+      - livramento condicional
+      - delação
+      - colaboração premiada
+      - busca e apreensão
+      - mandado de prisão
+      - testemunha
+      - interrogatório
+      - instrução criminal
+      - trânsito em julgado
+      - recurso especial
+      - revisão criminal
+      - maria da penha
+      - violência doméstica
+      - improbidade
+      - domicílio
+      - inviolabilidade
+      - busca domiciliar
+      - mandado judicial
+      - ilícito
+      - polícia
+      - policial
+      - tipo penal
+      - culpabilidade
+      - imputável
+      - antijurídico
+      - tribunal do júri
+    notes: >
+      OAB 1ª fase, objective (A-D) questions, 2019 onward. Two PDFs per exam joined on
+      the item number: the Tipo 1 caderno and the exam's best available 1ª-fase
+      gabarito (definitivo when published, preliminary otherwise — a preliminary key
+      sets answer_key_provisional). Measured offline over the 19 in-scope exams: 18
+      ingestible, 1,439 items recovered, 405 kept by the keyword gate, 5 of them
+      officially annulled.

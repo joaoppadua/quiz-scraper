@@ -1,23 +1,39 @@
-"""Pure selection logic for the OAB 1ª-fase objective exam (M2.5, Task 5). No network.
+"""The OAB 1ª-fase adapter (M2.5, Tasks 5 and 6). No network, no LLM, no PDFs.
 
 Artifact-selection labels are real: `entries_44` re-reads the same committed,
 already-trimmed index page `test_oab_site.py` uses, and the standalone `IndexEntry`
 literals below were copied verbatim out of the (gitignored) `data/raw/oab` cache
 rather than invented — the cache itself cannot be read at test time because it is
 not checked in.
+
+The ingestion half is driven from `tests/fixtures/oab_1f/`, which holds
+pdfplumber-extracted **text** of real cadernos and gabaritos. No exam PDF is
+committed (this repo is public), and `harvest_source` is exercised against a stub
+transport, so the whole file runs offline.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
-from bqpp.harvest.oab_1f import Artifacts, is_criminal, select_1f_artifacts
-from bqpp.harvest.oab_site import IndexEntry, parse_exam_index
-from bqpp.parse.objetiva import ObjetivaItem
+from bqpp.harvest.oab_1f import (
+    Artifacts,
+    choose_item_style,
+    harvest_source,
+    ingest_caderno,
+    is_criminal,
+    read_tipo_grid,
+    select_1f_artifacts,
+)
+from bqpp.harvest.oab_site import Exam, IndexEntry, parse_exam_index
+from bqpp.parse.objetiva import GridError, ObjetivaItem
 
 FIX = Path(__file__).parent / "fixtures" / "oab_site"
+FIX_1F = Path(__file__).parent / "fixtures" / "oab_1f"
 
 
 @pytest.fixture
@@ -528,3 +544,615 @@ def test_juridico_does_not_match_juri_and_apenas_does_not_match_pena():
     )
 
     assert not is_criminal(item, KEYWORDS, min_hits=1)
+
+
+# ======================================= Task 6: ingestion, and the wiring around it ==
+
+# Everything below drives the *shipped* `oab-1f-penal` entry rather than a stand-in.
+# The furniture list, the keyword list and the anchor candidates are the deliverable;
+# a suite that passed against a hand-picked copy of them would say nothing about it.
+
+
+@pytest.fixture(scope="module")
+def source_entry():
+    from bqpp.harvest.registry import load_sources
+
+    return next(e for e in load_sources() if e.id == "oab-1f-penal")
+
+
+@pytest.fixture
+def params(source_entry) -> dict:
+    return dict(source_entry.params)
+
+
+@pytest.fixture
+def db(tmp_path):
+    from bqpp.db import Database
+
+    database = Database.connect(tmp_path / "t.sqlite")
+    database.init_schema()
+    yield database
+    database.close()
+
+
+def _fixture_text(name: str) -> str:
+    return (FIX_1F / f"{name}.txt").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def caderno_43() -> str:
+    """43º Exame, Tipo 1. Trimmed to questions 55-74 plus the trailing questionário."""
+    return _fixture_text("exame_43_tipo1")
+
+
+@pytest.fixture(scope="module")
+def gabarito_43() -> str:
+    """43º Exame: all four tipos' bands and the correspondence table. Definitivo."""
+    return _fixture_text("exame_43_gabarito")
+
+
+@pytest.fixture(scope="module")
+def caderno_29() -> str:
+    """XXIX Exame, Tipo 1 — the 2019 layout, which anchors on "Questão N"."""
+    return _fixture_text("exame_29_tipo1")
+
+
+@pytest.fixture(scope="module")
+def gabarito_29() -> str:
+    """XXIX Exame. Preliminares — no definitivo was ever published for it."""
+    return _fixture_text("exame_29_gabarito")
+
+
+@pytest.fixture(scope="module")
+def caderno_42() -> str:
+    """42º Exame, Tipo 1. Questions 40-48 — empresarial and civil, no criminal item."""
+    return _fixture_text("exame_42_tipo1")
+
+
+EXAM_43 = Exam(id="16773", label="43º EXAME DE ORDEM UNIFICADO")
+EXAM_29 = Exam(id="11562", label="XXIX EXAME DE ORDEM UNIFICADO")
+
+
+def _artifacts(*, definitivo: bool, applied: str = "27/04/2025") -> Artifacts:
+    """A caderno/gabarito pair as `select_1f_artifacts` returns it.
+
+    The dates are the real application dates of the two fixture exams, because
+    `exam_year` is read off the caderno entry's label and nothing else.
+    """
+    rung = "Gabaritos Definitivos" if definitivo else "Gabaritos Preliminares"
+    return Artifacts(
+        caderno=IndexEntry(
+            href="https://s.oab.org.br/arquivos/2025/04/caderno-tipo-1.pdf",
+            label=f"{applied} - Caderno de Prova - Tipo 1",
+        ),
+        gabarito=IndexEntry(
+            href="https://s.oab.org.br/arquivos/2025/05/gabaritos.pdf",
+            label=f"{applied} - {rung} - Prova Objetiva (1ª fase)",
+        ),
+        definitivo=definitivo,
+    )
+
+
+ARTIFACTS_43 = _artifacts(definitivo=True)
+ARTIFACTS_29 = _artifacts(definitivo=False, applied="30/06/2019")
+
+
+# ---------------------------------------------------------------- the shipped entry ---
+
+
+def test_the_adapter_is_registered_and_offline_capable():
+    """`bqpp harvest` must reach it, and `bqpp parse` must be able to re-run it
+    from the cache without asking the OAB for 38 PDFs again."""
+    from bqpp.cli import _OFFLINE_CAPABLE, _adapters
+
+    assert _adapters()["oab_1f"].__module__ == "bqpp.harvest.oab_1f"
+    assert "oab_1f" in _OFFLINE_CAPABLE
+
+
+def test_the_shipped_entry_carries_the_professor_approved_keyword_list(params):
+    """The list is a domain decision and lives in config, never in code.
+
+    `scripts/recon_1f.py` ships it with one accidental duplicate ("delegacia"); the
+    config carries it de-duplicated and otherwise verbatim, in order.
+    """
+    assert params["keep_keywords"] == KEYWORDS
+    assert len(params["keep_keywords"]) == len(set(params["keep_keywords"])) == 93
+    assert params["min_keyword_hits"] == 2
+
+
+def test_the_shipped_entry_configures_the_source_rather_than_the_code(params):
+    assert params["tipo"] == 1
+    assert params["min_exam_year"] == 2019
+    assert params["columns"] == 2
+    assert params["banca"] == "FGV" and params["carreira"] == "oab"
+    assert params["item_style"] == ["bare", "questao"]
+    # 13415's text layer is unmapped glyphs and only 65 of its 80 items come back.
+    assert params["exclude_exam_ids"] == ["13415"]
+    assert float(params["min_interval_seconds"]) >= 1.0   # spec §6: <= 1 req/s
+
+
+# ------------------------------------------------------------------- the item anchor ---
+
+
+def test_the_item_anchor_is_detected_per_caderno(caderno_43, caderno_29, params):
+    """17 of 19 exams number with a bare numeral; the 2019 pair writes "Questão N".
+
+    One configured value cannot cover both, so the source configures *candidates*
+    and the adapter picks per caderno.
+    """
+    style_43, items_43 = choose_item_style(
+        caderno_43, styles=params["item_style"], furniture=params["furniture"]
+    )
+    style_29, items_29 = choose_item_style(
+        caderno_29, styles=params["item_style"], furniture=params["furniture"]
+    )
+
+    assert style_43 == "bare"
+    assert [i.number for i in items_43] == [str(n) for n in range(55, 75)]
+    assert style_29 == "questao"
+    assert [i.number for i in items_29] == [str(n) for n in range(60, 69)]
+
+
+def test_the_losing_anchor_is_not_merely_smaller_but_wrong(caderno_29, params):
+    """The margin is what makes the detection safe, so it is pinned.
+
+    Under `bare` the 2019 caderno recovers three unrelated fragments, not a prova.
+    """
+    style, items = choose_item_style(caderno_29, styles=["bare"], furniture=params["furniture"])
+
+    assert style == "bare"
+    assert len(items) < 5
+
+
+def test_a_caderno_that_recovers_nothing_yields_nothing(params):
+    style, items = choose_item_style(
+        "nada aqui é uma questão\n", styles=params["item_style"], furniture=params["furniture"]
+    )
+
+    assert items == [] and style == ""
+
+
+# ------------------------------------------------------------------ the furniture splice ---
+
+# The defect this closes: the OAB prints a running head, a page number and a trailing
+# "questionário de percepção" inside the question area, and the extracted text splices
+# them into the last alternative of whichever item they land after. Choice *counts*
+# stay right, so nothing bogus ships as an alternative — but a legal alternative ends
+# with "A OAB e a FGV agradecem sua colaboração.", which is a straight violation of
+# "reproduced verbatim, never paraphrased".
+
+_SPLICE_MARKERS = (
+    "A OAB e a FGV agradecem",
+    "Questionário de percepção",
+    "QUESTIONÁRIO DE PERCEPÇÃO",
+    "Este questionário é de preenchimento facultativo",
+    "Assinale suas respostas nos espaços próprios",
+    "PROVA APLICAD",
+    "EXAME DE ORDEM UN",
+    "EXAME DO ORDEM UNIFICADO",
+    "Tipo Branca",
+    "TIPO 1 – BRANCA",
+    "Página",
+)
+
+
+def _all_text(items) -> str:
+    return "\n".join(i.stem + "\n" + "\n".join(c["text"] for c in i.choices) for i in items)
+
+
+@pytest.mark.parametrize("fixture", ["exame_43_tipo1", "exame_29_tipo1", "exame_42_tipo1"])
+def test_no_furniture_survives_into_a_question(fixture, params):
+    text = _fixture_text(fixture)
+
+    _, items = choose_item_style(
+        text, styles=params["item_style"], furniture=params["furniture"]
+    )
+
+    assert items
+    blob = _all_text(items)
+    for marker in _SPLICE_MARKERS:
+        assert marker not in blob, f"{fixture}: {marker!r} is spliced into a question"
+    # The page number is furniture too, and it lands mid-alternative on 2019-2023
+    # exams as a bare numeral of its own.
+    assert not [ln for ln in blob.splitlines() if ln.strip().isdigit()]
+
+
+def test_the_splice_is_real_without_the_furniture_list(caderno_43, params):
+    """The guard above only means something if the defect exists unguarded."""
+    _, unguarded = choose_item_style(caderno_43, styles=params["item_style"])
+
+    assert "A OAB e a FGV agradecem sua colaboração." in _all_text(unguarded)
+
+
+def test_stripping_furniture_removes_no_legal_text(caderno_43, params):
+    """Same items, same alternatives, same wording — only the foreign lines go."""
+    _, before = choose_item_style(caderno_43, styles=params["item_style"])
+    _, after = choose_item_style(
+        caderno_43, styles=params["item_style"], furniture=params["furniture"]
+    )
+
+    assert [i.number for i in before] == [i.number for i in after]
+    for old, new in zip(before, after, strict=True):
+        assert len(old.choices) == len(new.choices) == 4
+        for a, b in zip(old.choices, new.choices, strict=True):
+            assert a["label"] == b["label"]
+            # every surviving line is a line that was already there, verbatim
+            assert set(b["text"].splitlines()) <= set(a["text"].splitlines())
+    assert after[-1].choices[-1]["text"].endswith(
+        "sejam, férias vencidas e saldo de salários."
+    )
+
+
+# ---------------------------------------------------------------- the cross-tipo check ---
+
+
+def test_the_four_tipos_are_read_and_agree(gabarito_43):
+    grid = read_tipo_grid(gabarito_43, tipo=1)
+
+    assert len(grid) == 80
+    assert grid[2] == "C"
+    assert grid[1] is None and grid[74] is None      # the 43º annuls two items
+
+
+def test_a_tipo_block_short_of_a_band_is_refused(gabarito_43):
+    """Entry count. A dropped trailing band cannot be seen from inside one block —
+    60 contiguous answers look like a 60-question exam — but four blocks that
+    disagree on the exam's length are unambiguous."""
+    maimed = gabarito_43.replace(
+        "61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80\n"
+        "D C D B A D A B B D C B A * D C C A D A\n",
+        "",
+        1,
+    )
+    assert maimed != gabarito_43
+
+    with pytest.raises(GridError, match="different entry counts"):
+        read_tipo_grid(maimed, tipo=1)
+
+
+def test_two_tipos_that_do_not_diverge_are_refused(gabarito_43):
+    """Content divergence. A merge keeps the count right and corrupts the letters,
+    so the count axis alone cannot see it. The four tipos are the same 80 questions
+    in four shuffled orders: two that answer every item identically are one tipo
+    read twice."""
+    head_1 = "43º EXAME DE ORDEM - PROVA TIPO 1"
+    head_2 = "43º EXAME DE ORDEM - PROVA TIPO 2"
+    head_3 = "43º EXAME DE ORDEM - PROVA TIPO 3"
+    block_1 = gabarito_43[gabarito_43.index(head_1) : gabarito_43.index(head_2)]
+    cloned = (
+        gabarito_43[: gabarito_43.index(head_2)]
+        + block_1.replace(head_1, head_2)
+        + gabarito_43[gabarito_43.index(head_3) :]
+    )
+
+    with pytest.raises(GridError, match="identically"):
+        read_tipo_grid(cloned, tipo=1)
+
+
+def test_the_real_tipos_diverge_far_from_the_threshold(gabarito_43, gabarito_29):
+    """Measured across all 19 gabaritos, tipo 1 and tipo 2 differ on 41 to 70 of 80."""
+    for gabarito in (gabarito_43, gabarito_29):
+        one = read_tipo_grid(gabarito, tipo=1)
+        two = read_tipo_grid(gabarito, tipo=2)
+        assert sum(1 for n in one if one[n] != two[n]) >= 40
+
+
+# ------------------------------------------------------------------------- ingestion ---
+
+
+def _ingest_43(db, params, caderno, gabarito, **kw) -> int:
+    return ingest_caderno(
+        caderno, gabarito, exam=EXAM_43, artifacts=ARTIFACTS_43,
+        source_id="oab-1f-penal", db=db, params=params, **kw,
+    )
+
+
+def test_one_source_document_per_exam_with_full_attribution(db, params, caderno_43, gabarito_43):
+    """Spec §15: attribution is what makes classroom reproduction defensible."""
+    _ingest_43(db, params, caderno_43, gabarito_43)
+
+    docs = {q.source_doc_id for q in db.iter_questions()}
+    assert len(docs) == 1
+    doc = db.get_source_document(docs.pop())
+    assert doc.kind == "prova"
+    assert doc.banca == "FGV" and doc.carreira == "oab"
+    assert doc.certame == "OAB 43º Exame (1ª fase)"
+    assert doc.url == ARTIFACTS_43.caderno.href
+    assert doc.source_id == "oab-1f-penal"
+
+
+def test_exam_year_reaches_the_source_document(db, params, caderno_43, gabarito_43):
+    """Load-bearing: the law watchlist only fires on questions whose year predates a
+    change, so a null year silently disables vetting for all 80 questions."""
+    _ingest_43(db, params, caderno_43, gabarito_43)
+
+    doc = db.get_source_document(next(db.iter_questions()).source_doc_id)
+    assert doc.exam_year == 2025
+
+
+def test_only_gate_passing_items_are_written(db, params, caderno_43, gabarito_43):
+    """20 items in the fixture; the criminal/processo-penal block plus two borderline
+    items pass. The count is exact, not a floor: a gate that let everything through
+    would be indistinguishable from full coverage."""
+    written = _ingest_43(db, params, caderno_43, gabarito_43)
+
+    assert written == 14
+    assert sorted(int(q.question_number) for q in db.iter_questions()) == [
+        55, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 70
+    ]
+
+
+def test_a_caderno_with_no_criminal_material_writes_nothing(db, params, caderno_42, gabarito_43):
+    """The 42º's questions 40-48 are empresarial and civil. Nothing is written — and
+    no orphan source_documents row is left behind either."""
+    written = ingest_caderno(
+        caderno_42, gabarito_43, exam=EXAM_43, artifacts=ARTIFACTS_43,
+        source_id="oab-1f-penal", db=db, params=params,
+    )
+
+    assert written == 0
+    assert list(db.iter_questions()) == []
+    assert db.get_source_document(
+        __import__("bqpp.models", fromlist=["x"]).source_doc_id(b"oab-1f-penal:16773:tipo1")
+    ) is None
+
+
+def test_every_question_is_mcq4_and_keyed_from_the_tipo_1_grid(
+    db, params, caderno_43, gabarito_43
+):
+    _ingest_43(db, params, caderno_43, gabarito_43)
+    grid = read_tipo_grid(gabarito_43, tipo=1)
+
+    for q in db.iter_questions():
+        assert q.format == "mcq4"
+        assert len(q.choices) == 4
+        assert [c["label"] for c in q.choices] == ["A", "B", "C", "D"]
+        assert q.answer_key == grid[int(q.question_number)]
+        assert q.answer_key in ("A", "B", "C", "D")
+        assert q.stem
+
+
+def test_a_definitivo_gabarito_leaves_the_key_settled(db, params, caderno_43, gabarito_43):
+    _ingest_43(db, params, caderno_43, gabarito_43)
+
+    assert all(not q.answer_key_provisional for q in db.iter_questions())
+
+
+def test_a_preliminary_gabarito_marks_every_key_provisional(
+    db, params, caderno_29, gabarito_29
+):
+    """The XXIX never published a definitivo; its key is still open to recursos."""
+    written = ingest_caderno(
+        caderno_29, gabarito_29, exam=EXAM_29, artifacts=ARTIFACTS_29,
+        source_id="oab-1f-penal", db=db, params=params,
+    )
+
+    assert written == 9
+    assert all(q.answer_key_provisional for q in db.iter_questions())
+    doc = db.get_source_document(next(db.iter_questions()).source_doc_id)
+    assert doc.certame == "OAB XXIX Exame (1ª fase)"
+    assert doc.exam_year == 2019
+
+
+def test_an_annulled_item_is_flagged_not_dropped(db, params, caderno_43, gabarito_43):
+    """A question the banca annulled is classroom material, not a defect. It is kept
+    with a null key and `nullified` set.
+
+    The gate is opened for this one test (`min_keyword_hits: 0`) because the 43º's
+    annulled item in range is a trabalhista question the criminal gate rightly drops;
+    the annulment path itself is what is under test.
+    """
+    params["min_keyword_hits"] = 0
+
+    _ingest_43(db, params, caderno_43, gabarito_43)
+
+    nullified = [q for q in db.iter_questions() if q.nullified]
+    assert [q.question_number for q in nullified] == ["74"]
+    assert nullified[0].answer_key is None
+    assert nullified[0].stem
+
+
+def test_reingesting_writes_nothing(db, params, caderno_43, gabarito_43):
+    first = _ingest_43(db, params, caderno_43, gabarito_43)
+
+    assert _ingest_43(db, params, caderno_43, gabarito_43) == 0
+    assert len(list(db.iter_questions())) == first
+
+
+def test_force_rewrites_without_duplicating(db, params, caderno_43, gabarito_43):
+    first = _ingest_43(db, params, caderno_43, gabarito_43)
+
+    assert _ingest_43(db, params, caderno_43, gabarito_43, force=True) == first
+    assert len(list(db.iter_questions())) == first
+
+
+def test_a_gabarito_whose_grid_cannot_be_read_writes_nothing(db, params, caderno_43):
+    """Never default an answer key: a wrong key reaches a student as fact."""
+    written = _ingest_43(db, params, caderno_43, "não há gabarito nenhum aqui.\n")
+
+    assert written == 0
+    assert list(db.iter_questions()) == []
+
+
+# 5 items whose text layer is entirely unmapped glyphs — the state a plain emptiness
+# check waves through and the corpus then ingests as noise.
+GARBLED = "\n".join(
+    f"{n}\n(cid:{n}0)(cid:{n}1)(cid:{n}2) (cid:{n}3)(cid:{n}4)\n"
+    f"(A) (cid:{n}5)(cid:{n}6)\n(B) (cid:{n}7)(cid:{n}8)\n"
+    f"(C) (cid:{n}9)(cid:{n}1)\n(D) (cid:{n}2)(cid:{n}3)"
+    for n in range(1, 6)
+)
+
+
+def test_an_illegible_caderno_writes_nothing_and_does_not_abort(db, params, gabarito_43):
+    params["min_keyword_hits"] = 0     # prove the health check, not the gate, is what drops them
+
+    written = _ingest_43(db, params, GARBLED, gabarito_43)
+
+    assert written == 0
+    assert list(db.iter_questions()) == []
+
+
+def test_document_level_glyph_noise_never_vetoes_a_legible_exam(
+    db, params, caderno_43, gabarito_43
+):
+    """E11. Two real exams (12895, 13817) carry an unmapped *cover page* and 80
+    individually clean questions. Judging the document as a whole discards both, so
+    health is judged per item and the document-level call is a warning only."""
+    from bqpp.parse.pdf import text_health
+
+    noisy = "(cid:9)" * 900 + "\n" + caderno_43
+    assert text_health(noisy) != "ok"
+
+    written = _ingest_43(db, params, noisy, gabarito_43)
+
+    assert written == 14
+
+
+def test_an_item_absent_from_the_grid_is_skipped_not_keyed(db, params, caderno_43, gabarito_43):
+    """The 43º fixture holds items 55-74; a 60-question exam keys five of them.
+
+    All four tipos lose their last band, so this exercises the per-item "no entry in
+    the grid" path rather than the cross-tipo check — which the previous two tests
+    already own, and which fires first when only one tipo is short.
+    """
+    truncated = re.sub(
+        r"^61 62 .*\n[A-E* ]+\n", "", gabarito_43, flags=re.M
+    )
+    assert len(read_tipo_grid(truncated, tipo=1)) == 60
+
+    written = _ingest_43(db, params, caderno_43, truncated)
+
+    assert written == 5
+    assert max(int(q.question_number) for q in db.iter_questions()) <= 60
+
+
+# ---------------------------------------------------------------------- harvest_source ---
+
+
+class _StubResult:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+
+class _StubFetcher:
+    """Stands in for `harvest.http.Fetcher` so the orchestration can be driven offline.
+
+    The real `Fetcher` is the only thing in the project that opens a socket and has
+    its own tests; what needs proving here is that this adapter asks it for the right
+    URLs, in the right order, with etiquette and dry-run honoured.
+    """
+
+    made: ClassVar[list] = []
+    routes: ClassVar[dict[str, bytes]] = {}
+
+    def __init__(self, **kwargs) -> None:
+        self.kwargs = kwargs
+        self.requested: list[str] = []
+        _StubFetcher.made.append(self)
+
+    def get(self, url: str) -> _StubResult:
+        from bqpp.harvest.http import FetchError
+
+        self.requested.append(url)
+        if url not in self.routes:
+            raise FetchError(f"{url}: not routed")
+        return _StubResult(self.routes[url])
+
+
+@pytest.fixture
+def harvest_rig(monkeypatch, source_entry, caderno_43, gabarito_43):
+    """Routes the shipped URLs to the committed fixtures. Only exam 17000 resolves;
+    every other exam id 404s, which is also the FetchError path under test."""
+    from bqpp.harvest import oab_1f
+
+    p = source_entry.params
+    index_html = (FIX / "exam_index_44.html").read_text(encoding="utf-8")
+    artifacts = select_1f_artifacts(parse_exam_index(index_html))
+    routes = {
+        p["seed_url"]: (FIX / "seed_page.html").read_bytes(),
+        p["exam_url_template"].format(exam_id="17000"): index_html.encode("utf-8"),
+        artifacts.caderno.href: b"CADERNO-PDF",
+        artifacts.gabarito.href: b"GABARITO-PDF",
+    }
+    texts = {b"CADERNO-PDF": caderno_43, b"GABARITO-PDF": gabarito_43}
+
+    _StubFetcher.made = []
+    _StubFetcher.routes = routes
+    monkeypatch.setattr(oab_1f, "Fetcher", _StubFetcher)
+    monkeypatch.setattr(
+        oab_1f, "extract_columns", lambda body, *, columns=2: texts[body]
+    )
+    return source_entry
+
+
+@pytest.fixture
+def settings_for_harvest(tmp_path):
+    from bqpp.config import load_settings
+
+    s = load_settings().model_copy(deep=True)
+    s.data_dir = tmp_path
+    return s
+
+
+def test_harvest_walks_the_index_and_ingests(harvest_rig, settings_for_harvest, db):
+    written = harvest_source(harvest_rig, db, settings_for_harvest)
+
+    assert written == 14
+    doc = db.get_source_document(next(db.iter_questions()).source_doc_id)
+    assert doc.certame == "OAB 44º Exame (1ª fase)"     # exam 17000's own label
+    assert doc.exam_year == 2025                        # 17/08/2025, off the index entry
+    assert doc.banca == "FGV"
+
+
+def test_a_dead_exam_page_costs_that_exam_and_nothing_else(harvest_rig, settings_for_harvest, db):
+    """46 of the 47 exam ids raise FetchError in the rig, and the run still finishes."""
+    assert harvest_source(harvest_rig, db, settings_for_harvest) == 14
+
+    fetcher = _StubFetcher.made[-1]
+    assert len(fetcher.requested) > 40
+
+
+def test_exams_before_min_exam_year_are_skipped(harvest_rig, settings_for_harvest, db):
+    harvest_rig.params["min_exam_year"] = 2026
+
+    assert harvest_source(harvest_rig, db, settings_for_harvest) == 0
+    assert list(db.iter_questions()) == []
+    assert not any(r.endswith(".pdf") for r in _StubFetcher.made[-1].requested)
+
+
+def test_an_excluded_exam_is_never_requested(harvest_rig, settings_for_harvest, db):
+    harvest_rig.params["exclude_exam_ids"] = ["17000", "13415"]
+
+    assert harvest_source(harvest_rig, db, settings_for_harvest) == 0
+    requested = _StubFetcher.made[-1].requested
+    assert not any("NumeroExame=17000" in r for r in requested)
+
+
+def test_dry_run_writes_nothing_and_opens_no_socket(harvest_rig, settings_for_harvest, db):
+    written = harvest_source(harvest_rig, db, settings_for_harvest, dry_run=True)
+
+    assert written == 0
+    assert list(db.iter_questions()) == []
+    fetcher = _StubFetcher.made[-1]
+    # offline=True is what makes the real Fetcher refuse to leave the cache, and
+    # db=None is what keeps a dry run out of the provenance manifest.
+    assert fetcher.kwargs["offline"] is True
+    assert fetcher.kwargs["db"] is None
+    assert not any(r.endswith(".pdf") for r in fetcher.requested)
+
+
+def test_harvest_etiquette_is_configured_from_settings(harvest_rig, settings_for_harvest, db):
+    harvest_source(harvest_rig, db, settings_for_harvest)
+
+    kwargs = _StubFetcher.made[-1].kwargs
+    assert kwargs["user_agent"] == settings_for_harvest.harvest.user_agent
+    assert kwargs["min_interval"] >= 1.0
+    assert kwargs["cache_dir"] == settings_for_harvest.raw_dir / "oab_1f"
+
+
+def test_harvest_is_idempotent(harvest_rig, settings_for_harvest, db):
+    first = harvest_source(harvest_rig, db, settings_for_harvest)
+
+    assert harvest_source(harvest_rig, db, settings_for_harvest) == 0
+    assert len(list(db.iter_questions())) == first
