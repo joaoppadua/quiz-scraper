@@ -88,11 +88,11 @@ RESULTADO_DEFINITIVO = IndexEntry(
 # 2025 exam's index page.
 CADERNO_PENAL_2A_FASE = IndexEntry(
     href="https://s.oab.org.br/arquivos/2025/06/1eb5df53-7170-4765-91f6-6e4f2b0357a9.pdf",
-    label="15/06/2025 - Caderno de provas (Direito Penal)",
+    label="15/06/2025 - Caderno de Provas (Direito Penal)",
 )
 CADERNO_CIVIL_2A_FASE = IndexEntry(
     href="https://s.oab.org.br/arquivos/2025/06/1ff5d82a-674b-41f3-9782-819e2e6e716b.pdf",
-    label="15/06/2025 - Caderno de provas (Direito Civil)",
+    label="15/06/2025 - Caderno de Provas (Direito Civil)",
 )
 PADRAO_PENAL_2A_FASE = IndexEntry(
     href="https://s.oab.org.br/arquivos/2025/06/8a847f3d-ed48-4795-bd2e-01b9497699fb.pdf",
@@ -101,6 +101,52 @@ PADRAO_PENAL_2A_FASE = IndexEntry(
 EDITAL_LOCAIS_HORARIO = IndexEntry(
     href="https://s.oab.org.br/arquivos/2025/04/2d412a0f-0ece-4bf6-912b-bdd7862de2c9.pdf",
     label="16/04/2025 - Edital - Locais e Horário de Realização da Prova Objetiva (1ª fase)",
+)
+
+# Exam 11553 (2016): a genuine second administration on one page — a reaplicação in
+# Salvador/BA, each with its own Tipo 1..4 caderno set and its own gabarito. Fix for
+# review Finding 1: picking `cadernos[0]` and ranking gabaritos independently can
+# pair one administration's questions with the other's answer key. All four real
+# labels below, verbatim (note this exam's own lowercase "Caderno de prova").
+CADERNO_TIPO_1_2016_MAIN = IndexEntry(
+    href="http://s.oab.org.br/arquivos/2019/10/08fce9f6-4722-4756-819e-58fadde35b66.pdf",
+    label="24/07/2016 - Caderno de prova - Tipo 1",
+)
+CADERNO_TIPO_1_2016_REAPLICACAO = IndexEntry(
+    href="http://s.oab.org.br/arquivos/2019/10/7614a970-ec8b-4e26-80eb-14a4aae49ea6.pdf",
+    label="14/08/2016 - Caderno de prova - Tipo 1 (Reaplicação Salvador/BA)",
+)
+GABARITO_2016_MAIN = IndexEntry(
+    href="http://s.oab.org.br/arquivos/2019/10/5747e52b-29d0-42a6-90a3-3473f920b3a4.pdf",
+    label="24/07/2016 - Gabaritos Preliminares da Prova Objetiva (1ª fase)",
+)
+GABARITO_2016_REAPLICACAO = IndexEntry(
+    href="http://s.oab.org.br/arquivos/2019/10/30f7e349-9129-4aab-ab32-debaec47b7a8.pdf",
+    label="14/08/2016 - Gabaritos Preliminares da Prova Objetiva (1ª fase) - "
+    "Examinandos de Salvador/BA",
+)
+# Real document order (index pages are newest-first, so the reaplicação — published
+# three weeks after the main application — is listed first).
+EXAM_11553_TIPO_1 = [
+    CADERNO_TIPO_1_2016_REAPLICACAO,
+    GABARITO_2016_REAPLICACAO,
+    CADERNO_TIPO_1_2016_MAIN,
+    GABARITO_2016_MAIN,
+]
+
+# Synthetic (dated 2027, engineered — not from the cache) distractors for Finding 2:
+# labels that carry an `_ADMIN` word but are built to still satisfy `_CADERNO_TIPO`
+# and `_GABARITO`, so the guard's necessity is actually exercised rather than
+# assumed. Across all 46 real cached pages neither pattern ever needed the `_ADMIN`
+# filter to reject a real label — these two are what a future label wording could
+# look like if it did.
+ADVERSARIAL_ADMIN_CADERNO = IndexEntry(
+    href="https://s.oab.org.br/arquivos/2027/01/adversarial-caderno.pdf",
+    label="01/01/2027 - Edital - Caderno de Prova - Tipo 1",
+)
+ADVERSARIAL_ADMIN_GABARITO = IndexEntry(
+    href="https://s.oab.org.br/arquivos/2027/01/adversarial-gabarito.pdf",
+    label="01/01/2027 - Comunicado - Gabaritos Preliminares - Prova Objetiva (1ª fase)",
 )
 
 
@@ -193,6 +239,105 @@ def test_only_2a_fase_and_admin_material_yields_none():
     ]
 
     assert select_1f_artifacts(entries) is None
+
+
+def test_multiple_administrations_on_one_page_refuse_rather_than_mispair():
+    """Review Finding 1, pinned against exam 11553's real labels, in the real,
+    cached document order (newest-first, so the Salvador/BA reaplicação — three
+    weeks after the main application — is listed before it).
+
+    Two Tipo-1 cadernos and two gabaritos, one pair per administration. Refusing
+    is the right call regardless of whether the two old independent rules
+    (`cadernos[0]`, and gabaritos ranked by `(definitivo, date)`) happen to agree
+    on *this* snapshot — see the next test for why they can't be trusted to.
+    """
+    assert select_1f_artifacts(EXAM_11553_TIPO_1) is None
+
+
+def test_the_old_independent_rules_could_disagree_and_silently_mispair():
+    """Why refusing on ambiguity is necessary, not just tidy (Finding 1).
+
+    On the real 11553 snapshot the two old rules — document-order `cadernos[0]`
+    and gabarito ranked by `(definitivo, date)` — happen to agree (both pick the
+    reaplicação: it's newest-first in the list, and it's also the newer of two
+    otherwise-equal preliminares). That agreement is coincidence, not guarantee,
+    and this test manufactures the disagreement to prove it: if the *main*
+    administration's gabarito reaches definitivo first — an ordinary event, it is
+    what happened on 16 of the other 45 cached pages — `rank()` jumps to it
+    regardless of date, while `cadernos[0]` is unmoved and still returns whichever
+    caderno the page happens to list first (the reaplicação's, here). The result
+    is the main administration's questions paired with a different
+    administration's answer key, wrong from question 1.
+
+    Reimplements the pre-fix rule locally (`_ADMIN`/`_CADERNO_TIPO`/`_GABARITO`/
+    `_DEFINITIVO`/`_fold` are the same private patterns `select_1f_artifacts`
+    uses) rather than calling it, because the guard now lives inside that
+    function and refuses before this pairing is ever computed — which is exactly
+    the behaviour under test.
+    """
+    from bqpp.harvest.oab_1f import _ADMIN, _CADERNO_TIPO, _DEFINITIVO, _GABARITO, _fold
+
+    main_gabarito_definitivo = IndexEntry(
+        href=GABARITO_2016_MAIN.href,
+        label="24/07/2016 - Gabaritos Definitivos - Prova Objetiva (1ª fase)",  # hypothetical
+    )
+    entries = [
+        CADERNO_TIPO_1_2016_REAPLICACAO,
+        GABARITO_2016_REAPLICACAO,
+        CADERNO_TIPO_1_2016_MAIN,
+        main_gabarito_definitivo,
+    ]
+
+    real = [e for e in entries if not _ADMIN.search(_fold(e.label))]
+    old_caderno_pick = next(
+        e for e in real if (m := _CADERNO_TIPO.search(_fold(e.label))) and int(m.group(1)) == 1
+    )
+    old_gabarito_pick = max(
+        (e for e in real if _GABARITO.search(_fold(e.label))),
+        key=lambda e: (
+            bool(_DEFINITIVO.search(_fold(e.label))),
+            e.date.isoformat() if e.date else "",
+        ),
+    )
+
+    assert old_caderno_pick == CADERNO_TIPO_1_2016_REAPLICACAO
+    assert old_gabarito_pick == main_gabarito_definitivo
+    # The mispairing the fix exists to prevent: a reaplicação caderno with the
+    # main administration's key.
+    assert old_caderno_pick != CADERNO_TIPO_1_2016_MAIN
+    assert old_gabarito_pick.href != GABARITO_2016_REAPLICACAO.href
+
+    # The fixed function refuses this exact ambiguous page rather than picking
+    # either side of that mismatch.
+    assert select_1f_artifacts(entries, tipo=1) is None
+
+
+def test_admin_filter_rejects_labels_engineered_to_defeat_the_artifact_patterns():
+    """Review Finding 2: `_ADMIN` must earn its place with a test that fails without
+    it. `ADVERSARIAL_ADMIN_CADERNO`/`_GABARITO` are synthetic labels built so that,
+    absent the `_ADMIN` filter, they alone would satisfy `_CADERNO_TIPO` and
+    `_GABARITO` and this would return a (wrong) `Artifacts` rather than `None`.
+    """
+    entries = [ADVERSARIAL_ADMIN_CADERNO, ADVERSARIAL_ADMIN_GABARITO]
+
+    assert select_1f_artifacts(entries) is None
+
+
+def test_gabarito_ranking_tolerates_a_missing_date():
+    """Review Finding 3: an `IndexEntry` whose label carries no leading date parses
+    to `.date is None`; ranking must still resolve deterministically rather than
+    raising, and a dated entry outranks an undated one.
+    """
+    undated = IndexEntry(
+        href="https://s.oab.org.br/arquivos/undated-gabarito.pdf",
+        label="Gabaritos Preliminares da Prova Objetiva (1ª fase)",
+    )
+    entries = [_TIPO_1_2020, undated, _GABARITO_PRELIMINAR_2020]
+
+    art = select_1f_artifacts(entries)
+
+    assert art is not None
+    assert art.gabarito == _GABARITO_PRELIMINAR_2020
 
 
 # ---------------------------------------------------------------- the keyword gate ---

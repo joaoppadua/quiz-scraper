@@ -59,6 +59,20 @@ def select_1f_artifacts(entries: list[IndexEntry], *, tipo: int = 1) -> Artifact
     the OAB republishes a corrected key under the same label with an "- atualizado"
     suffix — the most recently published entry wins. Returns None if either
     artifact is missing, never a half-populated `Artifacts` (E7).
+
+    A page can carry more than one full administration of the same numbered exam —
+    a reaplicação for candidates who missed the original, each with its own
+    caderno *and* its own gabarito (real case: exam 11553, a 2016 reaplicação in
+    Salvador/BA). `cadernos[0]` and the gabarito `rank()` below are two independent
+    selection rules with no shared notion of "which administration"; nothing
+    guarantees they land on the same one. When more than one Tipo-N caderno is
+    found this is refused rather than guessed at — silently pairing one
+    administration's questions with another's answer key would make every answer
+    wrong, which is worse than skipping the exam. A single caderno is never
+    ambiguous this way because an administration without its own caderno set isn't
+    a real administration; the gabarito side can safely carry a preliminar +
+    definitivo pair (or several preliminares) for that one administration, which is
+    the expected, common case `rank()` already resolves correctly.
     """
     real = [e for e in entries if not _ADMIN.search(_fold(e.label))]
 
@@ -67,6 +81,8 @@ def select_1f_artifacts(entries: list[IndexEntry], *, tipo: int = 1) -> Artifact
     ]
     gabaritos = [e for e in real if _GABARITO.search(_fold(e.label))]
     if not cadernos or not gabaritos:
+        return None
+    if len(cadernos) > 1:
         return None
 
     def rank(entry: IndexEntry) -> tuple[bool, str]:
