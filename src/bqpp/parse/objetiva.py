@@ -28,10 +28,26 @@ log = logging.getLogger(__name__)
 # means "annulled", never "missing".
 ANNULMENT_TOKENS: frozenset[str] = frozenset({"X", "ANULADA", "ANULADO", "N", "*"})
 
-_ITEM = re.compile(r"^[ \t]*(\d{1,3})[ \t]*[\.\)][ \t]+(?=\S)", re.M)
-# Choices are parenthesised letters at a line start; roman sub-items (I-, II-) are not.
-# MPRS writes them uppercase, MPF lowercase — labels are normalised to uppercase.
-_CHOICE = re.compile(r"^[ \t]*\(([A-Ea-e])\)[ \t]*", re.M)
+# The item anchor is selectable per source (amendment E13): a caderno numbers its
+# questions one of three ways, and none of the three may be widened to also accept
+# the others — doing so collapses MPRS from 50 items to 1 and MPF from 31 to 9
+# (measured in the M2.5 Task 1 recon; pinned in tests/test_objetiva.py).
+_ITEM_STYLES: dict[str, re.Pattern] = {
+    # "12. Enunciado" / "12) Enunciado" — MPRS, MPF, and every M3 source.
+    "punctuated": re.compile(r"^[ \t]*(\d{1,3})[ \t]*[\.\)][ \t]+(?=\S)", re.M),
+    # A bare numeral alone on its own line — how most OAB 1ª-fase cadernos number.
+    "bare": re.compile(r"^[ \t]*(\d{1,3})[ \t]*$", re.M),
+    # "Questão 12" alone on its own line — exams 11561/11562 (XXVIII/XXIX) instead.
+    "questao": re.compile(r"^[ \t]*Quest[aã]o[ \t]+(\d{1,3})[ \t]*$", re.M | re.I),
+}
+# Choices are letters at a line start, closing paren mandatory; roman sub-items
+# (I-, II-) are not. The opening parenthesis is optional (amendment E12): three OAB
+# exams write "A)" with no parenthesis at all, and one mixes "(A)" and "A)" inside a
+# single caderno, so this cannot be a per-source switch like the item anchor above —
+# it must be one globally tolerant pattern. Measured safe: with the opening
+# parenthesis optional, MPRS still segments to 50 items and MPF to 31, unchanged.
+# MPRS writes labels uppercase, MPF lowercase — labels are normalised to uppercase.
+_CHOICE = re.compile(r"^[ \t]*\(?([A-Ea-e])\)[ \t]*", re.M)
 
 _PAIR_ITEM = re.compile(r"^\s*Item\b(.*)$", re.I)
 _PAIR_GAB = re.compile(r"^\s*Gabarito\b(.*)$", re.I)
@@ -99,18 +115,20 @@ def _run_from(candidates: list[re.Match], start: int) -> list[re.Match]:
     return run
 
 
-def _question_marks(text: str) -> list[re.Match]:
+def _question_marks(text: str, pattern: re.Pattern) -> list[re.Match]:
     """The longest sequential run of candidates.
 
     Taking the first candidate is not safe: a prova's cover page carries its own
     enumerated instructions ("1. NÃO HAVERÁ SUBSTITUIÇÃO...", "a) Reveja as
     questões"), and anchoring there swallows the first real questions into one
-    oversized item.
+    oversized item. The same arbiter also resolves the OAB caderno's trailing
+    questionário de percepção, which restarts its own 1..10 numbering: the 20-item
+    prova run outlasts the questionário's run of 10.
 
     The real sequence is the longest run, and an equal-length tie breaks toward the
     *later* start, because a cover page always precedes the questions it introduces.
     """
-    candidates = list(_ITEM.finditer(text))
+    candidates = list(pattern.finditer(text))
     if not candidates:
         return []
     best: list[re.Match] = []
@@ -123,13 +141,25 @@ def _question_marks(text: str) -> list[re.Match]:
     return best
 
 
-def segment_objetiva(text: str, *, furniture: list[str] | None = None) -> list[ObjetivaItem]:
+def segment_objetiva(
+    text: str, *, furniture: list[str] | None = None, item_style: str = "punctuated"
+) -> list[ObjetivaItem]:
     """Split an A-E prova into numbered questions with their alternatives.
 
     `furniture` adds per-source running heads to strip, so adding a concurso whose
     header differs stays a manifest edit rather than a code change.
+
+    `item_style` selects which item anchor to use (see `_ITEM_STYLES`). An unknown
+    style raises rather than silently falling back — a wrong parse ships wrong
+    answers to students.
     """
-    marks = _question_marks(text)
+    try:
+        pattern = _ITEM_STYLES[item_style]
+    except KeyError:
+        raise ValueError(
+            f"unknown item_style {item_style!r}; expected one of {sorted(_ITEM_STYLES)}"
+        ) from None
+    marks = _question_marks(text, pattern)
     if not marks:
         return []
     extra = re.compile("|".join(f"^.*{f}.*$" for f in furniture), re.I | re.M) if furniture else None
