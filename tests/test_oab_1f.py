@@ -10,6 +10,11 @@ The ingestion half is driven from `tests/fixtures/oab_1f/`, which holds
 pdfplumber-extracted **text** of real cadernos and gabaritos. No exam PDF is
 committed (this repo is public), and `harvest_source` is exercised against a stub
 transport, so the whole file runs offline.
+
+Every "fix round" and "task review" referenced below is recorded in
+`docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md` **§ Defect history** —
+what each round found, and why the shipped rule has the shape it does. That is the
+tracked record; the per-task review reports themselves are working-tree-only.
 """
 
 from __future__ import annotations
@@ -121,9 +126,10 @@ EDITAL_LOCAIS_HORARIO = IndexEntry(
 
 # Exam 11553 (2016): a genuine second administration on one page — a reaplicação in
 # Salvador/BA, each with its own Tipo 1..4 caderno set and its own gabarito. Fix for
-# review Finding 1: picking `cadernos[0]` and ranking gabaritos independently can
-# pair one administration's questions with the other's answer key. All four real
-# labels below, verbatim (note this exam's own lowercase "Caderno de prova").
+# the Task 5 review's Finding 1 (§ Defect history): picking `cadernos[0]` and
+# ranking gabaritos independently can pair one administration's questions with the
+# other's answer key. All four real labels below, verbatim (note this exam's own
+# lowercase "Caderno de prova").
 CADERNO_TIPO_1_2016_MAIN = IndexEntry(
     href="http://s.oab.org.br/arquivos/2019/10/08fce9f6-4722-4756-819e-58fadde35b66.pdf",
     label="24/07/2016 - Caderno de prova - Tipo 1",
@@ -165,6 +171,23 @@ ADVERSARIAL_ADMIN_GABARITO = IndexEntry(
     label="01/01/2027 - Comunicado - Gabaritos Preliminares - Prova Objetiva (1ª fase)",
 )
 
+# Synthetic (dated 2027, engineered — not from the cache) pair for the final
+# whole-branch review's finding I4: a preliminar *republished after* a definitivo.
+# Across all 45 real index pages the definitivo is always the later publication, so
+# date-ranking alone reproduces every real selection and `rank()`'s definitivo term
+# reads as inert — deleting it passed the whole suite. It is not inert. This shape
+# ships a superseded key, and through `Artifacts.definitivo` it also flips
+# `answer_key_provisional`, so the question would be stored as settled fact.
+GABARITO_DEFINITIVO_EARLIER = IndexEntry(
+    href="https://s.oab.org.br/arquivos/2027/05/synthetic-definitivo.pdf",
+    label="10/05/2027 - Gabaritos Definitivos da Prova Objetiva (1ª fase)",
+)
+GABARITO_PRELIMINAR_REPUBLISHED_LATER = IndexEntry(
+    href="https://s.oab.org.br/arquivos/2027/05/synthetic-preliminar.pdf",
+    label="20/05/2027 - Gabaritos Preliminares da Prova Objetiva (1ª fase) - "
+    "retificado em 20/05/2027",
+)
+
 
 # ------------------------------------------------------------ artifact selection ---
 
@@ -176,6 +199,27 @@ def test_definitivo_preferred_for_tipo_1(entries_44):
     art = select_1f_artifacts(entries_44)
 
     assert art == Artifacts(caderno=expected_caderno, gabarito=expected_gabarito, definitivo=True)
+
+
+def test_a_preliminar_republished_after_the_definitivo_still_loses(entries_44):
+    """What `test_definitivo_preferred_for_tipo_1` above cannot see.
+
+    On every real page the definitivo is also the later publication, so that test
+    passes with the definitivo term deleted from `rank()` — date alone reproduces
+    the answer. Only this ordering separates the two rules, and it is the ordering
+    that matters: a preliminar republished after a definitivo is a key that predates
+    the recursos outcome, and taking it would ship superseded answers marked as
+    settled.
+    """
+    caderno = _only(entries_44, "Caderno de Prova", "Tipo 1")
+
+    art = select_1f_artifacts(
+        [caderno, GABARITO_DEFINITIVO_EARLIER, GABARITO_PRELIMINAR_REPUBLISHED_LATER]
+    )
+
+    assert art is not None
+    assert art.gabarito == GABARITO_DEFINITIVO_EARLIER
+    assert art.definitivo is True
 
 
 def test_falls_back_to_preliminar_when_no_definitivo():
@@ -764,6 +808,20 @@ def test_the_splice_is_real_without_the_furniture_list(caderno_43, params):
     assert "A OAB e a FGV agradecem sua colaboração." in _all_text(unguarded)
 
 
+def test_a_malformed_furniture_fragment_names_the_source_and_the_fragment(
+    db, params, caderno_43, gabarito_43
+):
+    """A config typo is a fact about the config, not about one PDF, so it aborts the
+    run rather than costing an exam — which makes the message the only clue anyone
+    gets. `segment_objetiva` names the offending fragment; the adapter adds the
+    source entry, because six source blocks in `config/sources.yaml` can carry a
+    `furniture` list and the fragment alone does not say which one to edit."""
+    params["furniture"] = [*params["furniture"], r"^[ \t]*("]
+
+    with pytest.raises(ValueError, match=r"oab-1f-penal: invalid furniture fragment"):
+        _ingest_43(db, params, caderno_43, gabarito_43)
+
+
 def test_stripping_furniture_removes_no_legal_text(caderno_43, params):
     """Same items, same alternatives, same wording — only the foreign lines go."""
     _, before = choose_item_style(caderno_43, styles=params["item_style"])
@@ -880,6 +938,31 @@ def test_only_gate_passing_items_are_written(db, params, caderno_43, gabarito_43
     assert sorted(int(q.question_number) for q in db.iter_questions()) == [
         55, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 70
     ]
+
+
+def test_the_furniture_list_reaches_the_stored_questions(db, params, caderno_29, gabarito_29):
+    """The call site, not the parser.
+
+    `test_no_furniture_survives_into_a_question` calls `choose_item_style` directly,
+    so it proves the fragments work and never that `ingest_caderno` forwards them.
+    Replacing that forward with `furniture=None` left the whole suite green — the
+    milestone's headline verbatim fix was unwired-testable (final whole-branch
+    review, finding I2). The XXIX is the fixture that shows it end to end: with the
+    list dropped, 4 of its 9 gate-surviving items carry a running head into the
+    corpus and 3 carry a bare page number.
+    """
+    written = ingest_caderno(
+        caderno_29, gabarito_29, exam=EXAM_29, artifacts=ARTIFACTS_29,
+        source_id="oab-1f-penal", db=db, params=params,
+    )
+
+    assert written == 9
+    stored = "\n".join(
+        q.stem + "\n" + "\n".join(c["text"] for c in q.choices) for q in db.iter_questions()
+    )
+    for marker in _SPLICE_MARKERS:
+        assert marker not in stored, f"{marker!r} reached a stored question"
+    assert not [ln for ln in stored.splitlines() if ln.strip().isdigit()]
 
 
 def test_a_caderno_with_no_criminal_material_writes_nothing(db, params, caderno_42, gabarito_43):
@@ -1146,6 +1229,28 @@ def test_a_dead_exam_page_costs_that_exam_and_nothing_else(harvest_rig, settings
 
     fetcher = _StubFetcher.made[-1]
     assert len(fetcher.requested) > 40
+
+
+def test_a_caderno_entry_without_a_date_is_skipped(harvest_rig, settings_for_harvest, db,
+                                                   monkeypatch):
+    """`exam_year` is load-bearing (`CLAUDE.md`): the law watchlist only fires on
+    questions whose year predates a change, so an exam registered with a null year
+    is not merely under-attributed — it is silently unvettable, for all 80 of its
+    questions. The date comes from the caderno's index-entry label and nowhere else,
+    so an entry that carries none costs the exam rather than the vetting.
+    """
+    url = harvest_rig.params["exam_url_template"].format(exam_id="17000")
+    dated = _StubFetcher.routes[url].decode("utf-8")
+    undated = dated.replace(
+        ">17/08/2025 - Caderno de Prova - Tipo 1<", ">Caderno de Prova - Tipo 1<"
+    )
+    assert undated != dated, "the fixture label changed; this test is no longer wired"
+    monkeypatch.setattr(_StubFetcher, "routes", {**_StubFetcher.routes,
+                                                url: undated.encode("utf-8")})
+
+    assert harvest_source(harvest_rig, db, settings_for_harvest) == 0
+    assert list(db.iter_questions()) == []
+    assert not any(r.endswith(".pdf") for r in _StubFetcher.made[-1].requested)
 
 
 def test_exams_before_min_exam_year_are_skipped(harvest_rig, settings_for_harvest, db):

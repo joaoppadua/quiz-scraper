@@ -1,4 +1,10 @@
-"""A–E prova reader and the two answer-grid conventions."""
+"""A–E prova reader and the two answer-grid conventions.
+
+Every "fix round" and "task review" referenced below is recorded in
+`docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md` **§ Defect history** —
+what each round found, and why the shipped rule has the shape it does. That is the
+tracked record; the per-task review reports themselves are working-tree-only.
+"""
 
 import hashlib
 import json
@@ -221,6 +227,38 @@ def test_per_source_furniture_comes_from_the_manifest():
     assert "TRIBUNAL" not in " ".join(c["text"] for c in item.choices)
 
 
+def test_an_alternation_inside_one_fragment_still_strips_whole_lines():
+    """The fragments are composed into `^.*(?:{f}).*$`, and the group is the point.
+
+    Ungrouped, a top-level `|` inside a fragment escapes the whole-line wrapper:
+    `^.*RODAPE|CABECALHO.*$` matches the bare second word anywhere on a line and
+    deletes only the matched fragment, leaving the rest of the sentence to ship as
+    if it were verbatim. Both branches must remove the *line*, or a config edit
+    that nobody could be expected to see as dangerous silently truncates legal
+    text mid-sentence.
+    """
+    text = (
+        "1. Pergunta?\n(A) alfa RODAPE meio da frase jurídica\n"
+        "(B) beta CABECALHO resto da frase jurídica\n(C) três\n(D) quatro\n"
+    )
+    (item,) = segment_objetiva(text, furniture=[r"RODAPE|CABECALHO"])
+
+    # Whole lines gone, so those two alternatives are left empty — not half-deleted.
+    assert item.choices[0]["text"] == ""
+    assert item.choices[1]["text"] == ""
+    assert item.choices[2]["text"] == "três"
+
+
+def test_a_malformed_furniture_fragment_names_itself():
+    """`config/sources.yaml`'s furniture list is professor-editable and every shipped
+    fragment carries regex metacharacters. A stray parenthesis must not surface as a
+    bare `PatternError` that names neither the fragment nor anything else — it aborts
+    the whole harvest, and the message is the only clue to which line to fix."""
+    text = "1. Pergunta?\n(A) um\n(B) dois\n(C) três\n(D) quatro\n"
+    with pytest.raises(ValueError, match=r"invalid furniture fragment '\^\[ \\\\t\]\*\('"):
+        segment_objetiva(text, furniture=[r"^[ \t]*("])
+
+
 # ---- selectable item anchor (M2.5, amendments E12/E13) ---------------------
 
 
@@ -244,7 +282,7 @@ def test_oab_exame43_default_style_finds_nothing():
 
 def test_oab_exame43_bare_anchor_yields_the_winning_run_55_to_74():
     """Item 1 is a deliberate negative control: annulled, and sitting outside the
-    winning run so the longest-sequential-run arbiter drops it (Task 1 report §5)."""
+    winning run so the longest-sequential-run arbiter drops it (amendment E16)."""
     text = (OAB_FIX / "exame_43_tipo1.txt").read_text(encoding="utf-8")
     items = segment_objetiva(text, item_style="bare")
     numbers = [i.number for i in items]
@@ -265,7 +303,7 @@ def test_oab_exame43_last_item_does_not_absorb_the_trailing_questionario():
     and once `_CHOICE` tolerates a bare "A)" (E12) the questionário's own ten
     bare-lettered alternatives would read as 40 further choices of item 74 unless
     the last item's body is bounded against them — verified corrupting all 19
-    in-scope exams' true last item before the fix (Task 2 fix-round report §2). A
+    in-scope exams' true last item before the fix (§ Defect history — Task 2). A
     weak `.usable` check (>= 4 choices) does not see this: it asserts choice
     *content*, so a boundary regression that reintroduces contamination fails here
     even if some other, unrelated line happens to keep the count at exactly 4."""
@@ -405,6 +443,56 @@ def test_an_incidental_bare_numeral_inside_a_punctuated_item_does_not_truncate_i
     assert len(items) == 2
     for it in items:
         assert len(it.choices) == 4
+
+
+# Two guards stand between an incidental bare numeral and a truncated item: the
+# `bare`/`questao` scoping above, and `_tail_boundary`'s four-choice floor. In the
+# fixture above they overlap — its stray "45" is followed by only two choice lines,
+# so the floor rejects it whether or not the scoping ran, and dropping *either*
+# guard alone left the suite green (final whole-branch review, finding I3). The two
+# tests below each remove that overlap from one side, so a future edit to either
+# guard fails on its own.
+
+
+def test_the_punctuated_scoping_holds_when_the_four_choice_floor_cannot_help():
+    """Pins the `item_style in ("bare", "questao")` scoping alone.
+
+    The stray numeral sits *before* the last item's four alternatives, so the
+    four-choice floor sees a well-formed item and would accept it as a section
+    start. Only the scoping keeps the OAB-specific `bare` tail check from running
+    against a punctuated source and truncating item 2 to a bare stem.
+    """
+    text = (
+        "1. Primeira pergunta?\n(A) alfa1\n(B) beta1\n(C) gama1\n(D) delta1\n"
+        "2. Segunda pergunta, na forma do art. 45 do CPP?\n45\n"
+        "(A) alfa2\n(B) beta2\n(C) gama2\n(D) delta2\n"
+    )
+
+    items = segment_objetiva(text)
+
+    assert len(items) == 2
+    assert [len(i.choices) for i in items] == [4, 4]
+    assert items[-1].choices[-1]["text"] == "delta2"
+
+
+def test_the_four_choice_floor_holds_where_the_scoping_does_not_apply():
+    """Pins `_tail_boundary`'s floor alone.
+
+    Under `item_style="bare"` the scoping is inert by construction — the bare tail
+    pattern is checked whatever it decides — so the floor is the only thing left. A
+    stray numeral trailed by two alternatives is an incidental digit inside the last
+    item's body, not the OAB questionário restarting at 1, and must not bound it.
+    """
+    text = (
+        "1\nPrimeira pergunta?\n(A) alfa1\n(B) beta1\n(C) gama1\n(D) delta1\n"
+        "2\nSegunda pergunta?\n(A) alfa2\n(B) beta2\n45\n(C) gama2\n(D) delta2\n"
+    )
+
+    items = segment_objetiva(text, item_style="bare")
+
+    assert len(items) == 2
+    assert [len(i.choices) for i in items] == [4, 4]
+    assert items[-1].choices[-1]["text"] == "delta2"
 
 
 # ---- regression: MPRS/MPF parse identically to before this change ----------

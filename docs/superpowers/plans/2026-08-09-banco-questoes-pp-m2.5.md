@@ -715,6 +715,97 @@ line (*"gabarito preliminar, sujeito a alteração após recursos"*) exactly as 
 
 ---
 
+## Defect history
+
+The guards in `parse/objetiva.py` and `harvest/oab_1f.py` look the way they do because
+of specific defects, most of them found *after* a green suite. The code and its tests
+cite this section by name; it lives here, in a tracked file, because the per-task
+review reports it summarises are working-tree-only (`.superpowers/` is git-ignored) and
+a citation a clone cannot follow is not a citation.
+
+Read this before loosening any of them. Every round below shipped green tests.
+
+### Task 2 — the tail boundary (2 fix rounds)
+
+Making `_CHOICE`'s opening parenthesis optional (E12) had a consequence n = 1 could not
+show: the OAB caderno's trailing **questionário de percepção** writes its own options as
+bare `A)`, so the prova's last item absorbed them. Measured before the fix: item 80 of
+the 43º came back with 44 choices ending in *"Plenamente satisfatória."*, and all 19
+in-scope exams were contaminated. A `.usable`-style check (≥ 4 choices) cannot see this
+— the count stays plausible — which is why the shipped test asserts choice *content*.
+
+- **Round 1** bounded the last item at the next candidate under the *selected* anchor.
+  That left 11561/11562 dirty: they anchor on `Questão N`, but their questionário
+  restarts with a **bare** numeral. Hence the shipped rule — the `bare` pattern is
+  checked *in addition*, for the `bare`/`questao` styles only.
+- **Round 2** fixed what round 1 introduced. Running the bare check unconditionally
+  made a stray bare numeral inside a *punctuated* item's own body (a page number, a
+  cross-reference) look like a new section, and the item **vanished** — 2 items became
+  1. A splice had been traded for a silent disappearance. Two guards came out of it,
+  and they are independent: the style scoping, and `_tail_boundary`'s requirement that
+  a candidate be followed by ≥ 4 choice-shaped lines before it can bound anything.
+  Both are pinned individually by `tests/test_objetiva.py`, because in the obvious
+  fixture they overlap and either one alone keeps the test green.
+
+**Carry-forward this produced:** 8 of 19 exams still glued a running head or the
+questionário's intro prose onto the last alternative — foreign text inside a verbatim
+legal alternative. Fixed in Task 6 through the per-source `furniture` list in
+`config/sources.yaml`, never by hardcoding OAB strings into the shared parse module.
+
+### Task 3 — the banded grid reader (4 fix rounds)
+
+The failure mode this task kept producing is the worst one the corpus can have: a grid
+that **looks** right. Every defect below kept a plausible entry count and shipped some
+other tipo's letters, and each was found by an adversarial re-review, never by the
+suite.
+
+- **Round 1.** A short in-block line merely *mentioning* a tipo ended the scope early
+  and truncated the grid. `_check_contiguous` cannot see it: the loss is a contiguous
+  tail. Same round: `_BAND_ANSWER_ROW` changed zero outcomes across 19 files when
+  stubbed out (its test passed for a reason unrelated to its name), and `exame_29` had
+  no cross-tipo *content* assertion, so an always-read-Tipo-1 mutant passed.
+- **Round 2.** Requiring a boundary to restart numbering at 1 was defeated by a
+  coincidental head row that also restarts at 1. Requiring a *valid band pair* fixed
+  that and introduced the **inverse** defect: a genuine `PROVA TIPO 2` whose head and
+  answer rows were split by one page-furniture line was dropped, and tipo 1 silently
+  returned tipo 2's letters for items 6–10. Counts stayed correct throughout — which is
+  what disproved the count-only cross-tipo mitigation this plan had routed to Task 6.
+- **Round 3.** Three rounds of patching the boundary predicate had produced three new
+  holes, so the shape was wrong, not the constants. Replaced by a whole-file structural
+  parse (`_band_pairs` + `_tipo_blocks`): find every heading and every band pair once,
+  assign each pair to the heading before it, and accept a heading as a block start only
+  if its first pair opens at item 1. One surviving hole, same class: `_band_pairs`
+  paired head → answer by skipping blank-or-`_FURNITURE` lines, and furniture cannot be
+  enumerated. Reproduced with a bare page number *and* with `(*)Questão anulada` — a
+  legend that is real corpus content (`exame_43_gabarito.txt`).
+- **Round 4** (fresh implementer). Inverted the rule: the answer row's alphabet is a
+  closed set, its complement is not, so search for the next line that *is* a conforming
+  `_BAND_ANSWER_ROW` within a measured 4-line window (the answer row is the immediately
+  next line in 336 of 336 real bands), abandoning on a head row or a heading. And,
+  first of the four rounds to add a **detector** rather than a better rule:
+  `_read_banded` raises when one item is given two different answers inside one tipo's
+  block — the signature every prior defect shared.
+
+**What the caller owes this module.** `read_tipo_grid` (`harvest/oab_1f.py`) reads all
+four tipos and cross-checks on **both** axes, because each was proven insufficient by a
+different round above: **entry count** catches a dropped band (invisible from inside one
+block — 60 contiguous answers look like a 60-question exam), **content divergence**
+catches a merge (count stays right, letters are wrong; measured, tipo 1 and tipo 2
+differ on 41–70 of 80, never on none). The count-only form recorded during round 2 is
+superseded and must not be reinstated.
+
+### Task 5 — one page, two administrations
+
+Exam 11553 (2016) publishes a full reaplicação in Salvador/BA on the same index page:
+its own Tipo 1–4 caderno set *and* its own gabarito. `cadernos[0]` and the gabarito
+`rank()` are independent selection rules with no shared notion of "which
+administration", so nothing made them land on the same one. `select_1f_artifacts`
+refuses when it finds more than one Tipo-N caderno rather than guessing. It fired
+correctly on the one real page that needed it during the live run. **The single-caderno
+half of this shape is still unguarded — see the Deferred table.**
+
+---
+
 ## M2.5 Definition of Done
 
 - All 19 in-scope exams attempted; **every exclusion logged by name with its reason**.
@@ -740,3 +831,8 @@ line (*"gabarito preliminar, sujeito a alteração após recursos"*) exactly as 
 | **A word-clustering column splitter** | M3 forbade building it speculatively; midpoint cropping is measured sufficient here too. |
 | **OCR** | Nothing in scope needs it. A mojibake exam is excluded, not rescued. |
 | **A repeated-line guard on alternatives** (Task 6 review) | **Log, do not drop.** After segmentation, flag any alternative containing a line that repeats across ≥ 5 items of the same exam — the signature of a running head spliced into a question. It costs nothing and surfaces the furniture class *without* a config edit, so a future caderno with an unlisted running head announces itself instead of degrading one alternative's verbatim fidelity in silence. Measured against the 19 shipped fragments: it would have surfaced **5 of 19** on its own — the running-head class, which is the ~20-items-per-exam bulk of the defect (`PROVA APLICADA`, `… EXAME DE ORDEM UN`, `NIFICADO – TIPO 1 – BRANCA`, `A EM 26/2/2023`, `Tipo Branca`, each repeating in 21–25 items). It would **not** have found the *tail* class: the questionário-de-percepção block, the page number and the `(cid:1013)` glyph appear once or twice per exam, and `A OAB e a FGV agradecem sua colaboração.` — the line the review used as its headline example — occurs in exactly one item per exam. A complete guard therefore needs a second, cheap rule for the tail: flag the last item whose final alternative is materially longer than its siblings. Log-don't-drop for both: a false positive must never cost a real question. |
+| **A single caderno paired with another administration's gabarito** (Task 5 review; the final review's highest-value deferral) | **Structurally unguarded, and the failure is total and silent.** `select_1f_artifacts` refuses a page carrying *two* Tipo-N cadernos, because `cadernos[0]` and the gabarito `rank()` could then land on different administrations. It does **not** refuse the asymmetric shape: one caderno, plus gabaritos from two administrations. `rank()` would take whichever is a definitivo, or the later one — and that can be the *other* administration's key, in which case every answer for that exam is wrong. Nothing downstream sees it: `read_tipo_grid`'s cross-tipo check compares the four tipos *within* one gabarito file, and a wrong-administration file is internally perfectly valid. Zero occurrences across all 46 real cached pages, which is the only reason this is deferred rather than fixed. Two ways to close it whenever the older exams (2010–2018, where reaplicações concentrate) come into scope: bind caderno and gabarito by publication date proximity, or refuse when the gabaritos' dates straddle more than one administration. |
+| **Six refuse-or-skip guards that no test outcome depends on** (final review, M3) | Re-measured by mutation on 2026-08-10: removing any one of these leaves the suite green — `ingest_caderno`'s "no items segmented" early return; `harvest_source`'s "the index yielded no exams" early return; `ingest_caderno`'s `_CHOICES_PER_FORMAT` shape check (an `mcq4` arriving with five alternatives would be stored under a label that misdescribes it); `read_tipo_grid`'s `tipo not in grids` raise (unreachable while `TIPOS` is 1–4 and the config asks for 1); `_read_banded`'s `if not tipo` and `if not grid` raises; and `ingest_caderno`'s `item_style` default plus its string-to-list coercion. Every one is a *refusal* — none can produce a wrong answer key, all of them turn a malformed config or an empty parse into a skip. Six tests to pin six paths a shipped config never reaches is a poor trade against the risk they are silently deleted; recorded here instead. **The seventh, the dateless-caderno skip, was pinned in-branch** — `CLAUDE.md` calls `exam_year` load-bearing, and that guard is what enforces it. |
+| **A coincidental bare numeral followed by ≥ 4 choice-shaped lines** (Task 2 review) | Inside a real OAB item's own body, such a numeral still reads as the questionário restarting and truncates the item. It needs a digit alone on a line *and* four alternatives after it before the next candidate; no in-scope caderno has one. Pre-existing design trade-off, not introduced by the tail-boundary fix, and the alternative (dropping the check) reinstates a splice on all 19 exams. |
+| **Two sub-variants of the banded residual family** (Task 3 review) | (a) A dropped **trailing** band leaves a short but internally contiguous grid, which `_read_banded` cannot refuse — caught one layer up by `read_tipo_grid`'s entry-count axis, and only there. (b) A coincidental digit row inside the 4-line answer-row window causes a premature abandon, which fails to a clean `GridError` — a skipped exam, never a wrong key. Both need ≥ 4 unrecognised intervening lines or a coincidental conforming row; neither occurs in any of the 19 real gabaritos. |
+| **`scripts/recon_1f.py` duplicates `seed_url` / `exam_url_template`** (Task 1 review) | The one-shot recon script carries them as literals instead of reading `config/sources.yaml`. If the OAB moves either URL the script goes stale silently — but it is a recon tool that has already done its job, and its output is recorded in the amendments table above. |

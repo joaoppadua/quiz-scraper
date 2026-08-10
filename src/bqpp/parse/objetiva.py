@@ -19,6 +19,11 @@ and annulment is written five different ways: `X`, `ANULADA`, `N`, `*` (the OAB'
 and a `-` in the justificativa tables. So `read_grid` refuses to guess: a grid
 whose convention it cannot positively identify raises rather than defaulting to
 "nothing annulled", because that default silently ships wrong answer keys.
+
+Every "fix round" and "task review" referenced below is recorded in
+`docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md` **§ Defect history** —
+what each round found, and why the shipped rule has the shape it does. That is the
+tracked record; the per-task review reports themselves are working-tree-only.
 """
 
 from __future__ import annotations
@@ -79,7 +84,7 @@ _GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-
 # passing (a retificado note, an errata). `_tipo_blocks` below is what tells a
 # real block start apart from either: not by local lookahead from the heading
 # (three fix rounds of the task-3 review each patched a lookahead condition and
-# each opened a new hole — see that report for the full defect history), but by
+# each opened a new hole — the plan's § Defect history records all four), but by
 # a whole-file structural parse: every heading and every band pair is found
 # once, each pair is assigned to the heading immediately preceding it, and a
 # heading only counts as a real block start if the *first* pair assigned to it
@@ -136,6 +141,32 @@ def _clean(block: str, extra: re.Pattern | None = None) -> str:
     if extra is not None:
         text = extra.sub("", text)
     return "\n".join(line for line in text.splitlines() if line.strip()).strip()
+
+
+def _furniture_pattern(furniture: list[str]) -> re.Pattern:
+    """One whole-line alternation over the per-source furniture fragments.
+
+    Each fragment is wrapped in a non-capturing group *before* `^.*` and `.*$` are
+    applied. Without the group a top-level `|` inside a fragment escapes the
+    wrapper — `RODAPE|CABECALHO` composes to `^.*RODAPE|CABECALHO.*$`, whose second
+    branch matches the bare word anywhere and deletes only *part* of the line,
+    leaving the rest to ship as if it were verbatim legal text. Whole-line removal
+    is the contract this composition owes the config (`config/sources.yaml`
+    documents its fragments as matched line-wise), and it is not the fragment
+    author's job to know they must parenthesise. None of the 19 shipped fragments
+    has a top-level `|`, so this changes nothing on any committed caderno — but the
+    list is professor-editable and its own comment invites edits.
+
+    Each fragment is also compiled on its own first, so a malformed one can be
+    named. Every shipped fragment carries regex metacharacters; a stray `(` is a
+    config typo, and a bare `re.PatternError` naming nothing aborts the whole run.
+    """
+    for f in furniture:
+        try:
+            re.compile(f)
+        except re.error as exc:
+            raise ValueError(f"invalid furniture fragment {f!r}: {exc}") from exc
+    return re.compile("|".join(f"^.*(?:{f}).*$" for f in furniture), re.I | re.M)
 
 
 class GridError(ValueError):
@@ -240,7 +271,7 @@ def segment_objetiva(
     marks = _question_marks(text, pattern)
     if not marks:
         return []
-    extra = re.compile("|".join(f"^.*{f}.*$" for f in furniture), re.I | re.M) if furniture else None
+    extra = _furniture_pattern(furniture) if furniture else None
 
     # A single-file prova carries its answer grid after the last question; without
     # this bound the final alternative swallows the whole grid and renders it to the
@@ -263,7 +294,7 @@ def segment_objetiva(
     # bearing on punctuated sources. Running it unconditionally, tried in an
     # earlier round, let an incidental bare digit inside a real MPRS/MPF item's
     # own body masquerade as a section boundary and silently dropped the item
-    # (caught by task review). Verified across all 19 in-scope exams
+    # (caught by the Task 2 review; § Defect history). Verified across all 19 exams
     # (recon_1f.py, offline): this closes the gap without moving the
     # `punctuated`-style MPRS/MPF regression, since their own trailing
     # interleaved grid is always bounded first by `_GRID_ROW`.
@@ -387,16 +418,17 @@ def _band_pairs(text: str) -> list[tuple[int, list[str], list[str]]]:
     finds for it.
 
     The direction of that rule is the point of fix-round-4. Rounds 1-3 of the
-    task-3 review each described the lines *between* a head row and its answer
-    row and were each defeated by a line nobody had described; round 3 paired
-    the two by skipping lines that are blank or match `_FURNITURE`, which knows
-    `Página N`, `N/M`, `PROVA OBJETIVA` and three MP running heads. A bare page
-    number is not on that list. Neither is the `* Questão anulada` legend that
-    is line 40 of `exame_43_gabarito.txt`, nor an errata note, nor whatever the
-    next PDF extraction invents — and no list closes, which is why three rounds
-    in a row were beaten by an unenumerated input. **Furniture cannot be
-    enumerated; an answer row can**, so the search binds on the row it is
-    looking for rather than on the rows it is willing to walk past.
+    task-3 review (§ Defect history) each described the lines *between* a head
+    row and its answer row and were each defeated by a line nobody had
+    described; round 3 paired the two by skipping lines that are blank or match
+    `_FURNITURE`, which knows `Página N`, `N/M`, `PROVA OBJETIVA` and three MP
+    running heads. A bare page number is not on that list. Neither is the
+    `* Questão anulada` legend that is line 40 of `exame_43_gabarito.txt`, nor an
+    errata note, nor whatever the next PDF extraction invents — and no list
+    closes, which is why three rounds in a row were beaten by an unenumerated
+    input. **Furniture cannot be enumerated; an answer row can**, so the search
+    binds on the row it is looking for rather than on the rows it is willing to
+    walk past.
 
     Failing to pair is not free, and this function does not pretend otherwise:
     a genuine heading whose own first band is missed is demoted by
@@ -433,7 +465,7 @@ def _band_pairs(text: str) -> list[tuple[int, list[str], list[str]]]:
 def _tipo_blocks(text: str) -> dict[int, list[tuple[list[str], list[str]]]]:
     """Every tipo's band pairs, keyed by tipo, via one whole-file structural pass.
 
-    Three fix rounds of the task-3 review each patched a local-lookahead
+    Three fix rounds of the task-3 review (§ Defect history) each patched a local-lookahead
     boundary predicate ("does this heading look like it starts a real block?")
     and each opened a new hole — a coincidental row that satisfied the current
     check, or a genuine pair split by furniture that failed it. Local lookahead
@@ -477,10 +509,27 @@ def _tipo_blocks(text: str) -> dict[int, list[tuple[list[str], list[str]]]]:
     a proof — it cannot fire if the merged bands happen to fill a gap the
     preceding block had rather than overlap it.
 
-    The standing mitigation for all three lives one layer up, at the caller:
-    Task 6 is expected to read all four tipos and cross-check that they recover
-    the same entry count, a signal only available there (task-3 fix-round-2
-    report, "note to Task 6").
+    The standing mitigation for all three lives one layer up, at the caller —
+    `harvest.oab_1f.read_tipo_grid`, which reads all four tipos and cross-checks
+    them. It needs **two** axes, because each was measured insufficient on its
+    own:
+
+      entry count         four blocks that disagree on how many questions the
+                          exam had are unambiguous, and it is the only way a band
+                          lost to (2) shows up at all — from inside one block, 60
+                          contiguous answers look exactly like a 60-question exam.
+                          It cannot see a merge: a merge keeps the count right.
+
+      content divergence  the four tipos are the same 80 questions in four
+                          shuffled orders (measured: tipo 1 and tipo 2 differ on
+                          41 to 70 of 80, never on none), so two tipos answering
+                          every shared item identically are one tipo read twice —
+                          which is what (1) and (3) produce. It cannot see a
+                          short block: a short block still diverges normally.
+
+    An earlier round of this module recorded the count check alone as the
+    mitigation. That is precisely the version a later round disproved, and a
+    maintainer reading only this file would otherwise rebuild it.
     """
     headings = [(m.start(), int(m.group(1))) for m in _TIPO_HEAD.finditer(text)]
     pairs = _band_pairs(text)

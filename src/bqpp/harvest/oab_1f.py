@@ -26,6 +26,11 @@ and it does so through `harvest/http.py`, which remains the only module in the p
 that opens a socket. Everything configurable — the keyword list, the furniture to
 strip, the tipo, the anchors to try, the excluded exams — lives in
 `config/sources.yaml` under `oab-1f-penal`, never in this file.
+
+Every "fix round" and "task review" referenced below is recorded in
+`docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md` **§ Defect history** —
+what each round found, and why the shipped rule has the shape it does. That is the
+tracked record; the per-task review reports themselves are working-tree-only.
 """
 
 from __future__ import annotations
@@ -102,6 +107,15 @@ def select_1f_artifacts(entries: list[IndexEntry], *, tipo: int = 1) -> Artifact
     a real administration; the gabarito side can safely carry a preliminar +
     definitivo pair (or several preliminares) for that one administration, which is
     the expected, common case `rank()` already resolves correctly.
+
+    **Known residual, deliberately open** (M2.5 plan, § Deferred): the asymmetric
+    shape — *one* caderno on a page whose gabaritos come from two administrations —
+    is not refused, and `rank()` would then key this administration's questions from
+    the other's answer file. Nothing downstream can see it: `read_tipo_grid` compares
+    the four tipos *inside* one gabarito, and a wrong-administration gabarito is
+    internally valid. Zero occurrences across all 46 cached pages, which is the only
+    reason it is open; close it before widening the source to 2010–2018, where the
+    reaplicações are.
     """
     real = [e for e in entries if not _ADMIN.search(_fold(e.label))]
 
@@ -226,7 +240,7 @@ def read_tipo_grid(
     """One tipo's answer grid, cross-checked against the other three.
 
     Two independent axes, because each on its own was proven insufficient by a
-    different fix round of Task 3:
+    different fix round of Task 3 (the plan's § Defect history):
 
     **Entry count.** A dropped trailing band comes back as a short grid. It cannot be
     detected from inside one block — 60 contiguous answers look exactly like a
@@ -333,9 +347,16 @@ def ingest_caderno(
     styles = params.get("item_style") or ["punctuated"]
     if isinstance(styles, str):
         styles = [styles]
-    style, items = choose_item_style(
-        caderno_text, styles=styles, furniture=params.get("furniture")
-    )
+    try:
+        style, items = choose_item_style(
+            caderno_text, styles=styles, furniture=params.get("furniture")
+        )
+    except ValueError as exc:
+        # A malformed `item_style` or `furniture` fragment is a fact about the config,
+        # not about this PDF, so it is raised rather than costing one exam — but it is
+        # re-raised naming the source entry, because the fragment alone does not say
+        # which of the six source blocks in `config/sources.yaml` to go and edit.
+        raise ValueError(f"{source_id}: {exc}") from exc
     if not items:
         log.warning("%s: no questions segmented under any of %s — skipping", exam.label, styles)
         return 0

@@ -66,7 +66,15 @@ def _fmt_answer(q: Question) -> str:
     true/false item. Spell the verdict out so the two forms can never be confused."""
     if q.format == "certo_errado" and q.answer_key in _VERDICT_LABELS:
         return f"**Resposta:** {_VERDICT_LABELS[q.answer_key].upper()}"
-    return f"**Resposta:** {q.answer_key or '— (discursiva)'}"
+    if q.answer_key:
+        return f"**Resposta:** {q.answer_key}"
+    # Two different things produce a null key, and reading them as one is the same
+    # ambiguity family as the letter above: a discursiva has no key because none
+    # exists, while an objective item annulled by the banca has none because the
+    # banca withdrew it — which is exactly why it is kept (spec §10.2). Rendering
+    # "(discursiva)" over an mcq4 tells the professor the wrong thing about the item
+    # in front of her.
+    return f"**Resposta:** — ({'anulada' if q.nullified else 'discursiva'})"
 
 
 def render_shortlist(

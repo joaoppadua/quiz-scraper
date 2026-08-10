@@ -229,6 +229,22 @@ def test_dissertativa_and_peca_render_without_an_options_block():
         assert "**Resposta:** — (discursiva)" in md
 
 
+def test_an_annulled_objective_item_says_so_instead_of_discursiva():
+    """A null answer key means two different things. A question the banca annulled is
+    classroom material, kept on purpose (spec §10.2) — labelling it "(discursiva)"
+    describes the wrong kind of item. Unreachable through `curate` today because vet
+    rejects `nullified` rows, but it is the same ambiguity the certo/errado fix
+    closed one line above."""
+    q = Question(id="anulada1", source_doc_id="d1", question_number="74", format="mcq4",
+                 stem="Enunciado.", choices=[{"label": "A", "text": "primeira"}],
+                 answer_key=None, nullified=True, vet_status="ok")
+
+    md = render_shortlist("T1.1", "x", [(q, None)], semester="2026.2")
+
+    assert "**Resposta:** — (anulada)" in md
+    assert "discursiva" not in md
+
+
 def test_certo_errado_and_mcq4_answer_lines_are_not_confusable_in_one_document():
     """The professor's exact bug: entry 2 (certo_errado, answer_key='C') and entry 3
     (mcq4, answer_key='C') rendered the identical string '**Resposta:** C'."""
