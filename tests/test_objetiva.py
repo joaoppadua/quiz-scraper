@@ -385,6 +385,28 @@ def test_mpf_finds_nothing_under_the_questao_anchor():
     assert segment_objetiva(text, item_style="questao") == []
 
 
+# ---- the tail-boundary check must not run against punctuated sources -------
+
+
+def test_an_incidental_bare_numeral_inside_a_punctuated_item_does_not_truncate_it():
+    """Fix-round-2 regression (task review, Important). A stray bare numeral
+    inside the *last* item's own body — a page number, a cross-reference, an
+    enumerated sub-point — must not be mistaken for the start of a new section
+    under `item_style="punctuated"`. Every M3 source (MPRS, MPF, Cebraspe) uses
+    this style; the questionário-de-percepção rationale for also checking `bare`
+    is OAB-specific and must not run here, or an incidental digit drops the item
+    outright instead of merely landing inside a choice (the lesser, pre-existing
+    splice defect this must not regress into something worse)."""
+    text = (
+        "1. Primeira pergunta?\n(A) alfa1\n(B) beta1\n(C) gama1\n(D) delta1\n"
+        "2. Segunda pergunta?\n(A) alfa2\n(B) beta2\n45\n(C) gama2\n(D) delta2\n"
+    )
+    items = segment_objetiva(text)
+    assert len(items) == 2
+    for it in items:
+        assert len(it.choices) == 4
+
+
 # ---- regression: MPRS/MPF parse identically to before this change ----------
 
 

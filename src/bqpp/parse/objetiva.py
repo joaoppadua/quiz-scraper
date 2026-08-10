@@ -142,6 +142,28 @@ def _question_marks(text: str, pattern: re.Pattern) -> list[re.Match]:
     return best
 
 
+def _tail_boundary(text: str, pattern: re.Pattern, after: int) -> re.Match | None:
+    """The first later candidate under `pattern` that itself looks like a genuine
+    item start — a stem followed by at least four choice-shaped lines before the
+    *next* candidate under the same pattern (or end of text), the same floor
+    `segment_objetiva` applies everywhere else before calling something a
+    question.
+
+    Not-part-of-the-winning-run is not the same as marks-a-new-section: a later
+    candidate merely failed the sequential-continuation test in `_question_marks`,
+    which says nothing about whether it sits inside the true last item's own body
+    (an incidental digit alone on a line) or genuinely starts a new, unrelated
+    sequence (the OAB caderno's trailing questionário de percepção). Only the
+    latter should ever bound the last item's body.
+    """
+    candidates = [m for m in pattern.finditer(text) if m.start() >= after]
+    for i, m in enumerate(candidates):
+        end = candidates[i + 1].start() if i + 1 < len(candidates) else len(text)
+        if len(list(_CHOICE.finditer(text[m.end() : end]))) >= 4:
+            return m
+    return None
+
+
 def segment_objetiva(
     text: str, *, furniture: list[str] | None = None, item_style: str = "punctuated"
 ) -> list[ObjetivaItem]:
@@ -174,25 +196,27 @@ def segment_objetiva(
             limit = marks[-1].end() + line_match.start()
             break
 
-    # The winning run is the longest *sequential* run of candidates (see
-    # `_question_marks`), so by construction no candidate after `marks[-1]` extends
-    # it — if one did, it would already be part of the run. A later candidate under
-    # the same pattern therefore marks a new, unrelated numbered sequence starting
-    # up: the OAB caderno's trailing *questionário de percepção* restarts at 1
-    # (E16), and once `_CHOICE` tolerates a bare "A)" (E12) its own alternatives
-    # read as more choices tacked onto the prova's last item unless something stops
-    # them there. The `bare` pattern is checked in addition to whichever style was
-    # selected, because the questionário is always numbered with a bare numeral —
-    # even on a caderno anchored on "Questão N" (11561/11562) — so a same-style-only
-    # check misses it there. Measured across all 19 in-scope exams (recon_1f.py,
-    # offline): this closes the gap for both without moving the `punctuated`-style
-    # MPRS/MPF regression, because their own trailing interleaved grid is always
-    # bounded first by `_GRID_ROW`, well before any incidental bare-shaped line in
-    # their own prose would matter. The earliest candidate under either pattern is
-    # where the winning run's last item truly ends, the same way `_GRID_ROW` marks
-    # where an inline answer key begins; take whichever bound comes first.
-    for tail_pattern in (pattern, _ITEM_STYLES["bare"]):
-        tail = next((m for m in tail_pattern.finditer(text) if m.start() >= marks[-1].end()), None)
+    # A later candidate that itself looks like a genuine item (see
+    # `_tail_boundary`) marks where a new, unrelated section begins, and the
+    # winning run's last item must not reach past it: the OAB caderno's trailing
+    # *questionário de percepção* restarts at 1 (E16), and once `_CHOICE`
+    # tolerates a bare "A)" (E12) its own alternatives would otherwise read as
+    # more choices tacked onto the prova's last item. `bare` is checked in
+    # addition to whichever style was selected, but *only* for `bare`/`questao` —
+    # this is an OAB-specific fact (the questionário is always numbered with a
+    # bare numeral, even under a `questao` anchor such as 11561/11562) with no
+    # bearing on punctuated sources. Running it unconditionally, tried in an
+    # earlier round, let an incidental bare digit inside a real MPRS/MPF item's
+    # own body masquerade as a section boundary and silently dropped the item
+    # (caught by task review). Verified across all 19 in-scope exams
+    # (recon_1f.py, offline): this closes the gap without moving the
+    # `punctuated`-style MPRS/MPF regression, since their own trailing
+    # interleaved grid is always bounded first by `_GRID_ROW`.
+    tail_patterns = {pattern}
+    if item_style in ("bare", "questao"):
+        tail_patterns.add(_ITEM_STYLES["bare"])
+    for tail_pattern in tail_patterns:
+        tail = _tail_boundary(text, tail_pattern, marks[-1].end())
         if tail is not None:
             limit = min(limit, tail.start())
     text = text[:limit]

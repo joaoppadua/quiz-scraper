@@ -4,14 +4,17 @@ This is a survey, not pipeline code. It measures — across all 19 in-scope exam
 what the existing parsers actually recover, so Task 2 and Task 3 can be written
 against numbers instead of an extrapolation from the single exam probed so far.
 
-Nothing here is imported by `src/bqpp`. Two prototypes live in this file on
-purpose:
+Nothing here is imported by `src/bqpp`. One prototype still lives in this file:
 
-  * the **bare item anchor** is applied by monkey-patching `objetiva._ITEM`. The
-    real change is a selectable `item_style`, which is Task 2's job; patching here
-    measures the anchor without pre-committing the parser to it.
   * the **banded grid reader** is prototyped in `read_banded` below. The real one
     is Task 3's job, in `parse/objetiva.py`, section-scoped by construction.
+
+The item anchor used to be prototyped here too, by monkey-patching
+`objetiva._ITEM`, before Task 2 shipped the real, selectable `item_style=`
+kwarg on `segment_objetiva` (and made `_CHOICE`'s opening parenthesis optional
+globally, so there is no separate "tolerant marker" mode to patch in either).
+This file now calls that shipped API directly — the survey exercises production
+code, not a stand-in for it.
 
 Network etiquette is not reimplemented: every byte comes through
 `harvest.http.Fetcher`, the only module in the project that opens a socket. Index
@@ -117,45 +120,21 @@ def discover(fetcher: Fetcher) -> list[tuple[str, Artifacts]]:
 #   bare      the question number alone on its own line          (17 of 19 exams)
 #   questao   "Questão N" on its own line                        (XXVIII and XXIX, 2019)
 #
-# Task 2 turns these into a selectable `item_style`. Widening the shipped `_ITEM`
-# instead would destabilise MPRS and MPF, which is what the cross-source measurement
-# at the end of this run checks.
-ANCHORS: dict[str, re.Pattern] = {
-    "bare": re.compile(r"^[ \t]*(\d{1,3})[ \t]*$", re.M),
-    "questao": re.compile(r"^[ \t]*Quest[ãa]o[ \t]+(\d{1,3})[ \t]*$", re.M),
-}
-
-# The alternative marker is NOT constant. Three of the 19 write `A)` throughout, and
-# the 38º mixes `(A)` and `A)` inside the same caderno, so a per-exam marker table
-# cannot work either — the opening parenthesis has to be optional.
-TOLERANT_CHOICE = re.compile(r"^[ \t]*\(?([A-Ea-e])\)[ \t]*", re.M)
-
-
-def segment_with(
-    text: str, *, anchor: re.Pattern, choice: re.Pattern | None = None
-) -> list[objetiva.ObjetivaItem]:
-    """`segment_objetiva` under a substituted anchor and alternative marker.
-
-    Monkey-patching is acceptable *here* — this file is a survey, run once, and never
-    imported by the pipeline. Task 2 makes both selectable properly.
-    """
-    old_item, old_choice = objetiva._ITEM, objetiva._CHOICE
-    objetiva._ITEM = anchor
-    if choice is not None:
-        objetiva._CHOICE = choice
-    try:
-        return objetiva.segment_objetiva(text)
-    finally:
-        objetiva._ITEM, objetiva._CHOICE = old_item, old_choice
+# Both are `segment_objetiva`'s real, shipped `item_style` values (Task 2); this
+# sweep just tries each and keeps whichever recovers the most items. The
+# alternative marker (`(A)` vs `A)`, mixed inside a single caderno on the 38º) is
+# no longer a separate mode to select either — `_CHOICE`'s opening parenthesis is
+# optional unconditionally in the shipped module.
+ANCHOR_STYLES: tuple[str, ...] = ("bare", "questao")
 
 
 def best_anchor(text: str) -> tuple[str, list[objetiva.ObjetivaItem]]:
     """The anchor that recovers the most items, and what it recovered."""
     best: tuple[str, list[objetiva.ObjetivaItem]] = ("none", [])
-    for name, pattern in ANCHORS.items():
-        items = segment_with(text, anchor=pattern, choice=TOLERANT_CHOICE)
+    for style in ANCHOR_STYLES:
+        items = objetiva.segment_objetiva(text, item_style=style)
         if len(items) > len(best[1]):
-            best = (name, items)
+            best = (style, items)
     return best
 
 
@@ -389,7 +368,6 @@ class Row:
     usable: int = 0
     unhealthy: int = 0
     punctuated: int = 0
-    paren_only: int = 0
     contiguous: bool = False
     grid: int = 0
     matched: int = 0
@@ -462,12 +440,11 @@ def sweep_exam(exam_id: str, art: Artifacts, fetcher: Fetcher, keywords: list[st
     row.items = len(items)
     row.usable = sum(1 for i in items if i.usable)
     row.unhealthy = sum(1 for i in items if text_health(_item_text(i)) != "ok")
-    # The shipped anchor and the shipped marker, unchanged, on the same text.
-    # E4 claims 0 items for the first; E3 claims the second needs no widening.
+    # The shipped default anchor+marker, unchanged, on the same text. E4 claims 0
+    # items for the OAB under it. (There is no separate "marker" axis to measure
+    # any more — `_CHOICE`'s opening parenthesis is unconditionally optional in
+    # the shipped module, so a `paren`-only column would just duplicate `items`.)
     row.punctuated = len(objetiva.segment_objetiva(text))
-    row.paren_only = len(
-        segment_with(text, anchor=ANCHORS[row.anchor] if row.anchor != "none" else ANCHORS["bare"])
-    )
     numbers = [int(i.number) for i in items]
     row.contiguous = bool(numbers) and numbers == list(range(1, len(numbers) + 1))
 
@@ -514,10 +491,14 @@ FIXTURES = PROJECT_ROOT / "tests" / "fixtures" / "cebraspe"
 
 
 def cross_source() -> list[str]:
-    """What the bare anchor does to the two sources that parse correctly today.
+    """What a `bare`/`questao` anchor does to the two sources that parse correctly
+    under the shipped `punctuated` default.
 
-    Task 2 pins these numbers so a future widening of the shipped `_ITEM` cannot
-    silently re-cut MPRS and MPF.
+    Task 2 pins these numbers in `tests/test_objetiva.py` so a future merge of the
+    `bare`/`questao` patterns into `punctuated` cannot silently re-cut MPRS and
+    MPF. There is no separate "tolerant marker" axis to measure any more —
+    `_CHOICE`'s opening parenthesis is unconditionally optional in the shipped
+    module, so the `punctuated` figure below already reflects it.
     """
     lines: list[str] = []
     for name in ("mprs_50", "mpf_31"):
@@ -526,19 +507,17 @@ def cross_source() -> list[str]:
             lines.append(f"{name}: fixture missing")
             continue
         text = path.read_text(encoding="utf-8")
-        shipped = objetiva.segment_objetiva(text)
-        bare = segment_with(text, anchor=ANCHORS["bare"])
-        questao = segment_with(text, anchor=ANCHORS["questao"])
-        tolerant = segment_with(text, anchor=objetiva._ITEM, choice=TOLERANT_CHOICE)
+        shipped = objetiva.segment_objetiva(text, item_style="punctuated")
+        bare = objetiva.segment_objetiva(text, item_style="bare")
+        questao = objetiva.segment_objetiva(text, item_style="questao")
         b_nums = [int(i.number) for i in bare]
         contiguous = bool(b_nums) and b_nums == list(range(b_nums[0], b_nums[0] + len(b_nums)))
         lines.append(
-            f"{name}: shipped anchor+marker -> {len(shipped)} items | "
-            f"bare anchor -> {len(bare)} items, "
+            f"{name}: punctuated -> {len(shipped)} items | "
+            f"bare -> {len(bare)} items, "
             f"{'contiguous' if contiguous else 'not contiguous'}"
             + (f" ({b_nums[0]}..{b_nums[-1]})" if b_nums else "")
-            + f" | questao anchor -> {len(questao)} items"
-            + f" | shipped anchor + tolerant marker -> {len(tolerant)} items"
+            + f" | questao -> {len(questao)} items"
         )
     return lines
 
@@ -570,7 +549,7 @@ class ChainedFetcher:
 def _table(rows: list[Row]) -> str:
     header = (
         "exam    year cad gab key         doc-health      anchor   marker        "
-        "items usable ill punct paren ctg grid match ann seed tuned note"
+        "items usable ill punct ctg grid match ann seed tuned note"
     )
     out = [header, "-" * len(header)]
     for r in rows:
@@ -579,7 +558,7 @@ def _table(rows: list[Row]) -> str:
             f"{'Y' if r.caderno else 'n':<3} {'Y' if r.gabarito else 'n':<3} "
             f"{r.key_kind:<11} {r.doc_health:<15} {r.anchor:<8} {r.marker:<13} "
             f"{r.items:<5} {r.usable:<6} {r.unhealthy:<3} {r.punctuated:<5} "
-            f"{r.paren_only:<5} {'Y' if r.contiguous else 'n':<3} "
+            f"{'Y' if r.contiguous else 'n':<3} "
             f"{r.grid:<4} {r.matched:<5} {r.annulled:<3} "
             f"{r.kept_seed:<4} {r.kept_tuned:<5} {r.note}"
         )
