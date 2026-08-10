@@ -91,6 +91,12 @@ sources:
     # done once, offline, to build this list; re-running it belongs to the widening
     # milestone, not to the pipeline.
     certames:
+      # PC_DF_26_DELEGADO's file is published as "PROVA OBJETIVA (P1) E GABARITO
+      # PRELIMINAR COM JUSTIFICATIVAS" — its answer key carries the same
+      # subject-to-recursos exposure that Question.answer_key_provisional exists to
+      # flag (M2.5). Setting the flag here is deliberately out of scope for M2.5:
+      # this is an M3-owned adapter, and an M2.5 task must not rewrite its rows.
+      # Deferred — its own commit, if the professor wants it.
       - slug: PC_DF_26_DELEGADO
         carreira: delegado
         certame: PC/DF Delegado 2026

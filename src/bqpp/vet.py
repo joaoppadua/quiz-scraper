@@ -59,6 +59,12 @@ SYSTEM = (
 # it is exactly the kind of thing worth resolving with the class (spec §10.2).
 _SOFTENING_CODE = "resposta_mudou_mas_util"
 
+# Rule-derived reasons that pull an LLM verdict of "ok" down to "flagged": the question
+# is still usable, but something about its answer key is not settled fact and the
+# professor needs the warning banner (spec §10.2 for no_gabarito; same reasoning for a
+# preliminary key still open to recursos).
+_ESCALATING_CODES = frozenset({"no_gabarito", "gabarito_preliminar"})
+
 
 class WatchlistEntry(BaseModel):
     id: str
@@ -90,6 +96,13 @@ def apply_rules(
     if question.format in ("mcq4", "mcq5", "certo_errado") and not question.answer_key:
         reasons.append(
             VetReason(code="no_gabarito", detail="sem gabarito alinhado para questão objetiva")
+        )
+    if question.answer_key_provisional:
+        reasons.append(
+            VetReason(
+                code="gabarito_preliminar",
+                detail="gabarito preliminar, sujeito a alteração após recursos",
+            )
         )
 
     matched: list[WatchlistEntry] = []
@@ -139,7 +152,7 @@ def _merge_verdict(
     verdict: VetStatus = result["verdict"]
     if verdict == "rejected" and any(r.code == _SOFTENING_CODE for r in reasons):
         verdict = "flagged"
-    if verdict == "ok" and any(r.code == "no_gabarito" for r in rule_reasons):
+    if verdict == "ok" and any(r.code in _ESCALATING_CODES for r in rule_reasons):
         verdict = "flagged"
     return verdict, reasons
 
