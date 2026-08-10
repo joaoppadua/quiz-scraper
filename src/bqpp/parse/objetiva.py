@@ -30,8 +30,9 @@ ANNULMENT_TOKENS: frozenset[str] = frozenset({"X", "ANULADA", "ANULADO", "N", "*
 
 # The item anchor is selectable per source (amendment E13): a caderno numbers its
 # questions one of three ways, and none of the three may be widened to also accept
-# the others — doing so collapses MPRS from 50 items to 1 and MPF from 31 to 9
-# (measured in the M2.5 Task 1 recon; pinned in tests/test_objetiva.py).
+# the others — doing so collapses a punctuated source's real item count (50 for
+# MPRS, 31 for MPF) to a handful of unrelated single-digit candidates (measured in
+# the M2.5 Task 1 recon; pinned in tests/test_objetiva.py).
 _ITEM_STYLES: dict[str, re.Pattern] = {
     # "12. Enunciado" / "12) Enunciado" — MPRS, MPF, and every M3 source.
     "punctuated": re.compile(r"^[ \t]*(\d{1,3})[ \t]*[\.\)][ \t]+(?=\S)", re.M),
@@ -172,6 +173,28 @@ def segment_objetiva(
         if _GRID_ROW.match(line_match.group(0)):
             limit = marks[-1].end() + line_match.start()
             break
+
+    # The winning run is the longest *sequential* run of candidates (see
+    # `_question_marks`), so by construction no candidate after `marks[-1]` extends
+    # it — if one did, it would already be part of the run. A later candidate under
+    # the same pattern therefore marks a new, unrelated numbered sequence starting
+    # up: the OAB caderno's trailing *questionário de percepção* restarts at 1
+    # (E16), and once `_CHOICE` tolerates a bare "A)" (E12) its own alternatives
+    # read as more choices tacked onto the prova's last item unless something stops
+    # them there. The `bare` pattern is checked in addition to whichever style was
+    # selected, because the questionário is always numbered with a bare numeral —
+    # even on a caderno anchored on "Questão N" (11561/11562) — so a same-style-only
+    # check misses it there. Measured across all 19 in-scope exams (recon_1f.py,
+    # offline): this closes the gap for both without moving the `punctuated`-style
+    # MPRS/MPF regression, because their own trailing interleaved grid is always
+    # bounded first by `_GRID_ROW`, well before any incidental bare-shaped line in
+    # their own prose would matter. The earliest candidate under either pattern is
+    # where the winning run's last item truly ends, the same way `_GRID_ROW` marks
+    # where an inline answer key begins; take whichever bound comes first.
+    for tail_pattern in (pattern, _ITEM_STYLES["bare"]):
+        tail = next((m for m in tail_pattern.finditer(text) if m.start() >= marks[-1].end()), None)
+        if tail is not None:
+            limit = min(limit, tail.start())
     text = text[:limit]
 
     items: list[ObjetivaItem] = []

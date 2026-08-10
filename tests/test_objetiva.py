@@ -253,31 +253,46 @@ def test_oab_exame43_bare_anchor_yields_the_winning_run_55_to_74():
     for it in items:
         assert it.usable
 
-    # Every item but the last has exactly its own four (A)-parenthesised choices.
-    for it in items[:-1]:
+    # Every item, including the last, has exactly its own four choices labelled
+    # A-D. `.usable` alone (>= 4 choices) is too weak to see the class of defect
+    # this guards against — see the next test.
+    for it in items:
         assert [c["label"] for c in it.choices] == list("ABCD")
 
 
-def test_oab_exame43_last_item_absorbs_the_trailing_questionario():
-    """KNOWN LIMITATION, pinned rather than hidden: nothing in `segment_objetiva`
-    bounds the *final* item of the winning run against trailing material that is not
-    grid-shaped. The fixture's item 74 is followed directly by the questionário de
-    percepção, and once `_CHOICE` tolerates a bare "A)" (E12) the questionário's own
-    ten bare-lettered alternatives read as 40 further choices of item 74 — its stem
-    is untouched and correct, only its trailing choice list is contaminated. This is
-    not particular to this fixture: every OAB caderno appends the same questionário,
-    so the true last item of any bare/questao-anchored source will hit this in
-    production. Left unfixed here because a boundary heuristic that also drops it
-    changes MPF's degenerate bare-style item count from the pinned 9 to 8 (see
-    `test_mpf_collapses_from_31_to_9_under_the_bare_anchor`) — fixing this needs a
-    boundary rule verified against more than these five fixtures, which is outside
-    this task's scope. Flagged in the Task 2 report for follow-up."""
+def test_oab_exame43_last_item_does_not_absorb_the_trailing_questionario():
+    """The fixture's item 74 is followed directly by the questionário de percepção,
+    and once `_CHOICE` tolerates a bare "A)" (E12) the questionário's own ten
+    bare-lettered alternatives would read as 40 further choices of item 74 unless
+    the last item's body is bounded against them — verified corrupting all 19
+    in-scope exams' true last item before the fix (Task 2 fix-round report §2). A
+    weak `.usable` check (>= 4 choices) does not see this: it asserts choice
+    *content*, so a boundary regression that reintroduces contamination fails here
+    even if some other, unrelated line happens to keep the count at exactly 4."""
     text = (OAB_FIX / "exame_43_tipo1.txt").read_text(encoding="utf-8")
     items = segment_objetiva(text, item_style="bare")
     last = items[-1]
     assert last.number == "74"
-    assert len(last.choices) == 44, "pin the exact contamination so a fix must update this test"
+    assert len(last.choices) == 4
     assert last.stem.startswith("Em sede de sentença prolatada")
+
+    # The real choices, verbatim from the caderno.
+    assert last.choices[0]["text"].startswith(
+        "Dada a concomitância de motivações para o término motivado"
+    )
+    assert last.choices[2]["text"].startswith("Configurada a culpa recíproca")
+
+    # None of the questionário's own ten alternatives — the actual contamination
+    # this fix removes — leaked into item 74's choices.
+    joined = " ".join(c["text"] for c in last.choices)
+    for contaminant in (
+        "muito fácil",
+        "Plenamente satisfatória",
+        "muito longa",
+        "Sim, todos",
+        "Não tenho como opinar",
+    ):
+        assert contaminant not in joined, f"questionário content leaked in: {contaminant!r}"
 
 
 def test_oab_exame43_questionario_restart_does_not_win():
@@ -290,13 +305,16 @@ def test_oab_exame43_questionario_restart_does_not_win():
 
 def test_oab_exame42_bare_anchor_with_unparenthesised_choices():
     """15812/40º/16483-style exams write 'A)' with no opening parenthesis anywhere
-    in the caderno — 36 bare markers, zero parenthesised (E12)."""
+    in the caderno — 36 bare markers, zero parenthesised (E12). This fixture ends
+    right after item 48 with no trailing questionário, so its last item was never
+    contaminated — but every item, including the last, is asserted here too."""
     text = (OAB_FIX / "exame_42_tipo1.txt").read_text(encoding="utf-8")
     items = segment_objetiva(text, item_style="bare")
     assert [int(i.number) for i in items] == list(range(40, 49))
     for it in items:
         assert it.usable
         assert [c["label"] for c in it.choices] == list("ABCD")
+    assert len(items[-1].choices) == 4, "the last item (48) must be clean too"
 
 
 def test_oab_exame42_default_and_questao_styles_find_nothing():
@@ -307,13 +325,16 @@ def test_oab_exame42_default_and_questao_styles_find_nothing():
 
 def test_oab_exame29_questao_anchor_yields_60_to_68():
     """11561/XXIX-style exams anchor on 'Questão N' alone on its own line, not a
-    bare numeral (E13)."""
+    bare numeral (E13). This fixture ends right after item 68 with no trailing
+    questionário, so its last item was never contaminated — but every item,
+    including the last, is asserted here too."""
     text = (OAB_FIX / "exame_29_tipo1.txt").read_text(encoding="utf-8")
     items = segment_objetiva(text, item_style="questao")
     assert [int(i.number) for i in items] == list(range(60, 69))
     for it in items:
         assert it.usable
         assert [c["label"] for c in it.choices] == list("ABCD")
+    assert len(items[-1].choices) == 4, "the last item (68) must be clean too"
 
 
 def test_oab_exame29_default_style_finds_nothing():
@@ -321,15 +342,26 @@ def test_oab_exame29_default_style_finds_nothing():
     assert segment_objetiva(text) == []
 
 
-# ---- the anchor stays selectable: widening it collapses MPRS/MPF -----------
+# ---- the anchor stays selectable: a bare anchor catastrophically collapses a
+# ---- punctuated source (31/50 real items -> single digits) -----------------
+#
+# The load-bearing regression is the `punctuated`-style item COUNT and full parsed
+# STRUCTURE staying at 50/31 (see the signature tests below) — that is what
+# protects shipped data. The `bare`-style residue below is evidence, not a
+# contract: what matters is that it collapses to a handful of items out of a
+# punctuated 50/31, not the exact surviving digit. The last-item boundary fix
+# (fix round 1) moved MPF's bare-style residue from 9 to 8 items — a stray
+# bare-shaped candidate deep in MPF's own unrelated (punctuated) exam content
+# now also bounds its degenerate last item — and that is fine: MPF is not a
+# bare-anchored source and this run was never meaningful data, only a canary.
 
 
-def test_mprs_collapses_from_50_to_1_under_the_bare_anchor():
+def test_mprs_bare_anchor_collapses_a_punctuated_source():
     """Pinned so a future merge of the bare and punctuated patterns fails loudly."""
     text = (FIX / "mprs_50.txt").read_text(encoding="utf-8")
     assert len(segment_objetiva(text, item_style="punctuated")) == 50
     bare = segment_objetiva(text, item_style="bare")
-    assert [i.number for i in bare] == ["44"]
+    assert len(bare) == 1, "50 real items must not survive under the wrong anchor"
 
 
 def test_mprs_finds_nothing_under_the_questao_anchor():
@@ -337,12 +369,15 @@ def test_mprs_finds_nothing_under_the_questao_anchor():
     assert segment_objetiva(text, item_style="questao") == []
 
 
-def test_mpf_collapses_from_31_to_9_under_the_bare_anchor():
-    """Pinned so a future merge of the bare and punctuated patterns fails loudly."""
+def test_mpf_bare_anchor_collapses_a_punctuated_source():
+    """Pinned so a future merge of the bare and punctuated patterns fails loudly.
+    The surviving count (8, post-fix — see the module comment above) is evidence
+    of the collapse, not a contract: what matters is single digits out of 31."""
     text = (FIX / "mpf_31.txt").read_text(encoding="utf-8")
     assert len(segment_objetiva(text, item_style="punctuated")) == 31
     bare = segment_objetiva(text, item_style="bare")
-    assert [int(i.number) for i in bare] == list(range(1, 10))
+    assert len(bare) < 10, "31 real items must not survive under the wrong anchor"
+    assert [int(i.number) for i in bare] == list(range(1, len(bare) + 1)), "still contiguous from 1"
 
 
 def test_mpf_finds_nothing_under_the_questao_anchor():
