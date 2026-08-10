@@ -65,8 +65,9 @@ class Database:
         return cls(conn)
 
     # Columns added after a milestone shipped. SQLite's ADD COLUMN is O(1), rewrites
-    # nothing and defaults existing rows to NULL, so this is safe against the live
-    # corpus — whose usage_log is the only record of what was actually taught.
+    # nothing, and backfills existing rows with the declared DEFAULT — NULL for a bare
+    # TEXT column, 0 for `INTEGER DEFAULT 0` — so this is safe against the live corpus —
+    # whose usage_log is the only record of what was actually taught.
     MIGRATIONS: tuple[tuple[str, str, str], ...] = (
         ("questions", "stem_context", "TEXT"),
         ("questions", "answer_key_provisional", "INTEGER DEFAULT 0"),
