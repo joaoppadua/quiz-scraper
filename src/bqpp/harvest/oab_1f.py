@@ -188,6 +188,12 @@ def choose_item_style(
     detection below has the opposite failure mode, in that a caderno that recovers
     nothing under either anchor recovers nothing under both and is reported as such.
 
+    An unknown style raises out of `segment_objetiva` and aborts the whole run rather
+    than costing one exam. Deliberate: every other failure in this adapter is per-exam
+    because it is a fact about one PDF, but a misspelt anchor in config would
+    mis-segment all 18 exams identically, and failing on the first is how anyone finds
+    out.
+
     Ranked on the **longest contiguous run** first and the raw item count second. A
     run is the stronger signal: it says the candidates form a real question sequence
     rather than a scatter of numerals a page layout happened to leave on their own
@@ -257,8 +263,11 @@ def read_tipo_grid(
                 f"tipo {tipo} and tipo {other} answer all {len(shared)} shared items "
                 f"identically — two tipos' bands have probably merged into one block"
             )
-        log.debug("tipo %d and tipo %d diverge on %d of %d items",
-                  tipo, other, diverging, len(shared))
+        # info, not debug: this is the number that would drift toward the measured
+        # floor (41 of 80) if a future gabarito started mis-scoping, and a check whose
+        # margin nobody can see is a check nobody can audit.
+        log.info("tipo %d and tipo %d diverge on %d of %d items",
+                 tipo, other, diverging, len(shared))
     return grids[tipo]
 
 

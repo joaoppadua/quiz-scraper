@@ -974,12 +974,15 @@ def test_a_gabarito_whose_grid_cannot_be_read_writes_nothing(db, params, caderno
     assert list(db.iter_questions()) == []
 
 
-# 5 items whose text layer is entirely unmapped glyphs — the state a plain emptiness
-# check waves through and the corpus then ingests as noise.
+# 5 items whose text layer is mojibake — a *full* text layer of shifted glyphs, the
+# state a plain emptiness check waves through and the corpus then ingests as noise.
+# Mojibake rather than `(cid:N)` on purpose: the furniture list now scrubs a line of
+# nothing but cid glyphs, so a cid-built fixture would be removed before the health
+# check ever saw it and this test would pass for the wrong reason.
+_MOJIBAKE = "ĶƌĚĞŵ ĚŽƐ ĚǀŽŐĂĚŽƐ"
 GARBLED = "\n".join(
-    f"{n}\n(cid:{n}0)(cid:{n}1)(cid:{n}2) (cid:{n}3)(cid:{n}4)\n"
-    f"(A) (cid:{n}5)(cid:{n}6)\n(B) (cid:{n}7)(cid:{n}8)\n"
-    f"(C) (cid:{n}9)(cid:{n}1)\n(D) (cid:{n}2)(cid:{n}3)"
+    f"{n}\n{_MOJIBAKE} {_MOJIBAKE}\n"
+    f"(A) {_MOJIBAKE}\n(B) {_MOJIBAKE}\n(C) {_MOJIBAKE}\n(D) {_MOJIBAKE}"
     for n in range(1, 6)
 )
 
@@ -1007,6 +1010,34 @@ def test_document_level_glyph_noise_never_vetoes_a_legible_exam(
     written = _ingest_43(db, params, noisy, gabarito_43)
 
     assert written == 14
+
+
+def test_a_stray_glyph_page_number_is_stripped_but_glyphed_prose_is_not(params):
+    """13415 appends an unmapped page number to the last alternative of 9 of the 15
+    items that reach the gate — `(cid:1013)`, `1(cid:1012)`, always a line of nothing
+    but glyphs.
+
+    The fragment is anchored to a whole line for a reason. Unanchored, it would delete
+    any line in which one glyph failed to map, losing real legal text silently. Anchored,
+    such a line survives and reaches the professor with a visible `(cid:N)` in it —
+    which is a defect she can see, and therefore the better failure.
+    """
+    from bqpp.parse.objetiva import segment_objetiva
+
+    caderno = (
+        "1\n"
+        "Sobre a inviolabilidade do domicílio, assinale a afirmativa correta.\n"
+        "(A) O ingresso exige mandado judicial.\n"
+        "(B) O flagrante delito dispensa o mandado.\n"
+        "(C) O consentimento do morador supre o mandado.\n"
+        "(D) A busca noturna depende de autorização expressa da(cid:1004) parte.\n"
+        "(cid:1010)\n"
+    )
+
+    item = segment_objetiva(caderno, item_style="bare", furniture=params["furniture"])[0]
+
+    assert "(cid:1010)" not in item.choices[-1]["text"]
+    assert item.choices[-1]["text"].endswith("da(cid:1004) parte.")
 
 
 def test_an_item_absent_from_the_grid_is_skipped_not_keyed(db, params, caderno_43, gabarito_43):
@@ -1083,7 +1114,11 @@ def harvest_rig(monkeypatch, source_entry, caderno_43, gabarito_43):
     monkeypatch.setattr(
         oab_1f, "extract_columns", lambda body, *, columns=2: texts[body]
     )
-    return source_entry
+    # A deep copy, not the module-scoped entry: two tests below tune `params` to
+    # exercise a skip path, and handing out the shared object let those edits leak
+    # into every later test in the file. That made `test_harvest_is_idempotent`
+    # vacuous (it compared 0 against 0) and made the suite order-dependent.
+    return source_entry.model_copy(deep=True)
 
 
 @pytest.fixture
@@ -1154,5 +1189,13 @@ def test_harvest_etiquette_is_configured_from_settings(harvest_rig, settings_for
 def test_harvest_is_idempotent(harvest_rig, settings_for_harvest, db):
     first = harvest_source(harvest_rig, db, settings_for_harvest)
 
+    assert first == 14, "the first run must write something, or this proves nothing"
     assert harvest_source(harvest_rig, db, settings_for_harvest) == 0
     assert len(list(db.iter_questions())) == first
+
+
+def test_the_rig_hands_each_test_its_own_entry(harvest_rig, source_entry):
+    """The leak this guards against made two other tests silently vacuous."""
+    harvest_rig.params["min_exam_year"] = 1999
+
+    assert source_entry.params["min_exam_year"] == 2019

@@ -149,11 +149,23 @@ sources:
     # 17 of the 19 in-scope cadernos number a question with a bare numeral on its own
     # line; the XXVIII and XXIX (2019) write "Questão N" instead. One value cannot
     # cover both, and neither can a per-exam map that a new exam would silently miss.
+    #
+    # A typo here aborts the whole run rather than costing one exam: `segment_objetiva`
+    # raises on an unknown style and nothing catches it. That is deliberate — every
+    # other failure in this adapter is per-exam because it is a fact about one PDF,
+    # but a misspelt anchor is a fact about the config and would mis-segment all 18
+    # exams identically. Failing on the first is the only way anyone finds out.
     item_style: [bare, questao]
-    # Excluded by name, deliberately. The XXXV (2022) caderno's text layer is unmapped
-    # glyphs — `(cid:N)` — and only 65 of its 80 items come back at all. Worse, 63 of
-    # those 65 pass a per-item health check, so nothing downstream would catch it:
-    # this exclusion is load-bearing, not belt-and-braces.
+    # Excluded by name, deliberately. Measured on the XXXV (2022): its text layer is
+    # partly unmapped glyphs, only 65 of its 80 items segment at all, and the per-item
+    # health check catches just 2 of those (q56, q68). The other 63 are legible legal
+    # Portuguese — 15 of them reach the keyword gate — so the exclusion is NOT there
+    # because the surviving items are corrupt prose. It is there because 15 of 80 is a
+    # quarter of an exam, silently: 15 items would be attributed to the XXXV Exame as
+    # if that were its criminal yield, when 65 of its 80 questions were never read.
+    # Nine of the 15 also carry a stray `(cid:NNNN)` page-number glyph in their last
+    # alternative; the furniture list scrubs that shape (see the `(cid:` fragment
+    # below), so it is not the reason either.
     exclude_exam_ids: ["13415"]
     min_interval_seconds: 1.5
     banca: FGV
@@ -172,7 +184,20 @@ sources:
       - '^[ \t]*D?A\s+EM\s+\d{1,2}/\d{1,2}/\d{4}[ \t]*$'
       - '^[ \t]*.?[ \t]*TIPO\s*(?:0?\d)?\s*[–—-]?\s*BRANCA\b.*$'
       - '^[ \t]*[–—-]?\s*P[ÁA]GINA\s*\d*[ \t]*$'
+      # The aggressive one, and the one most likely to cost legal text on some future
+      # caderno: it strips ANY bare 1-3 digit line. Today every single removal across
+      # the 19 exams is a page number (0-26) sitting at the end of the last alternative
+      # on a page, but an exam that typesets a numbered table or a matching list inside
+      # a stem would lose those numerals. If that ever happens, narrow it to a trailing
+      # position rather than deleting it — page numbers are worth stripping.
       - '^[ \t]*\d{1,3}[ \t]*$'
+      # The same page number when its glyphs did not map: `(cid:1013)`, `1(cid:1012)`.
+      # Deliberately whole-line, not a bare `\(cid:\d+\)`: measured across the one
+      # exam that has this artefact (13415, 9 occurrences), it is always a line of
+      # nothing but glyphs. An unanchored fragment would instead delete any line where
+      # a single glyph failed to map — losing real legal text silently, which is worse
+      # than shipping a visible `(cid:N)` the professor can see in the shortlist.
+      - '^[ \t]*\d{0,2}[ \t]*(?:\(cid:\d+\)[ \t]*)+$'
       - 'QUESTION[ÁA]RIO\s+DE\s+PERCEP[ÇC][ÃA]O\s+SOBRE\s+A\s+PRO'
       - 'Este\s+question[áa]rio\s+[ée]\s+de\s+preenchimento\s+facultativo'
       - '^[ \t]*exame\.[ \t]*$'
@@ -289,3 +314,7 @@ sources:
       sets answer_key_provisional). Measured offline over the 19 in-scope exams: 18
       ingestible, 1,439 items recovered, 405 kept by the keyword gate, 5 of them
       officially annulled.
+
+      `bqpp parse --source oab-1f-penal` needs one live `bqpp harvest` first: the
+      exam index pages are not in this source's cache directory until then, and an
+      offline run has nothing to enumerate from. It fails loudly and writes nothing.
