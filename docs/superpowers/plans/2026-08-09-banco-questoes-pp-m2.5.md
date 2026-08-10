@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the milestone M2 deferred. Ingest the **OAB 1ª-fase objective provas** for 2019–2026 — Tipo 1 only — from index pages the corpus already caches, adding **419 gate-surviving `mcq4` items, of which roughly 210 are criminal or criminal-procedure**, all with official answer keys. (Measured by Task 1; the pre-recon guess was 100–170.)
+**Goal:** Close the milestone M2 deferred. Ingest the **OAB 1ª-fase objective provas** for 2019–2026 — Tipo 1 only — from index pages the corpus already caches, adding **405 gate-surviving `mcq4` items, of which roughly 210 are criminal or criminal-procedure**, all with official answer keys. (405 is the real run's measured figure, 2026-08-10 — see Results below. Task 1's prototype had said 419; that number scored spurious keyword hits from a bug fixed before Task 6 shipped. The pre-recon guess was 100–170.)
 
 **Architecture:** No new machinery. M3's `parse/columns.py` and `parse/objetiva.py` already do the two-column reflow and A–E segmentation M2 deferred this milestone for; they need one selectable item anchor and one additional grid style. A new adapter `harvest/oab_1f.py` imports `oab_site.py`'s existing pure discovery helpers, selects the Tipo 1 caderno and the best available gabarito per exam, gates non-criminal items with a keyword filter, and writes the same `Question` rows `classify → vet → curate` already consume.
 
@@ -14,7 +14,7 @@
 - **2019–2026 only** (19 exams). `eduagarcia/oab_exams` already covers 2010–2018, so this is the genuinely new material and cross-source overlap is side-stepped entirely rather than deduplicated.
 - **Tipo 1 only.** Tipos 2–4 are shuffled reshuffles of the same items. Taking one dissolves the tipo-binding and cross-tipo dedup problem M3 deferred for MPRJ/TJRJ.
 - **Preliminary gabaritos are ingested, not dropped** — but auto-flagged, because the *recursos* phase is exactly what overturns them.
-- **A keyword pre-gate runs at ingest.** Each caderno is 80 questions across ~14 discipline blocks with no headings to bind on; measured, the gate turns 1,439 items into 419 — without it, 1,020 irrelevant items enter both the corpus and the classify bill.
+- **A keyword pre-gate runs at ingest.** Each caderno is 80 questions across ~14 discipline blocks with no headings to bind on; measured on the real run, the gate turns 1,439 items into 405 — without it, 1,034 irrelevant items enter both the corpus and the classify bill.
 - **`[ranking]` is not touched.** New items are `mcq4`, already at the floor weight.
 
 ---
@@ -593,6 +593,125 @@ Pick three ingested questions from three different exams and verify each `answer
 git add docs/superpowers/plans/2026-08-09-banco-questoes-pp-m2.5.md
 git commit -m "docs: record the M2.5 real-run results against the definition of done"
 ```
+
+---
+
+## Result (real run, 2026-08-10)
+
+All seven tasks landed — six code tasks plus the live run — with 417 tests green and `ruff check .`
+clean both before and after. Measured against the definition of done:
+
+| | Target | Actual |
+|---|---|---|
+| In-scope exams attempted | 19 | **19** — 18 ingested; 13415 excluded by name (`glyph_unmapped`, E10) |
+| Gate-surviving items | 419 (stale — see above) | **405**, exactly matching Task 6's offline prediction |
+| `answer_key_provisional = True` | ~179 (offline prediction) | **179** |
+| Annulled items | ~5 (offline prediction) | **5** |
+| Format shape | all `mcq4`, 4 choices | **405/405** `mcq4`, **405/405** with exactly 4 choices |
+| Documents with a null `exam_year` | 0 | **0** — 18/18 carry a year |
+| Corpus total | 817 → 1222 | **1222** — zero content-hash collisions with the pre-existing 817 |
+| `bqpp harvest` idempotence | 0 new on re-run | **0** — every source reported `0 new questions`, including `oab-1f-penal` |
+| `classify` | all new + the pre-existing backlog | **405/405 new items classified**; 1 failure, the pre-existing M1 case (not new — see below) |
+| `vet` | same | **405/405 new items vetted**; same 1 pre-existing failure |
+| `usage_log` | untouched | **untouched**, still 0 rows |
+
+The 18 ingested exams' per-exam keyword-gate keeps summed exactly to 405 (21+19+22+29+22+22+
+26+17+27+21+19+21+22+30+23+18+26+20), matching the harvest's actual insert count digit for digit —
+no duplicate suppression fired, consistent with Task 6's zero-collision finding.
+
+**Skips, all logged by name with a reason:** 9 exams before `min_exam_year` (2018 and earlier),
+1 excluded by config (13415), 1 refused as an ambiguous multi-administration page (exam 11553 / XX,
+2016 — the exact case Task 5 built a guard for, and it fired correctly on the one real page that
+needed it), and 1 future exam with no padrão published yet (47º, 2026). All accounted for; nothing
+skipped that Tasks 1–6 did not already predict.
+
+**Corpus integrity.** The 817 pre-existing questions are intact: every one of the five pre-existing
+sources (`hf-oab-exams`, `hf-oab-bench`, `oab-2f-penal`, `cebraspe-cadernos`, `manual-provas`) logged
+`0 new questions` on the real harvest — no rows added, changed, or re-keyed — and their
+`source_documents` counts (16, 7, 37, 2, 2) are unchanged before and after. `usage_log` stayed at 0
+rows throughout, as it was before the run. MPRS, MPF, Cebraspe and OAB 2ª-fase output is unchanged
+by construction and by their fixture-equality tests, which are part of the 417 that stayed green.
+
+### Subtopic coverage, before → after
+
+Every one of the 21 subtopics grew; none flat, none shrank. Totals sum to more than 405 because a
+question can carry more than one subtopic id.
+
+| | Before | After | | | Before | After |
+|---|---|---|---|---|---|---|
+| T1.1 | 8 | **15** | | T2.9 | 13 | **24** |
+| T1.2 | 20 | **30** | | T3.1 | 3 | **4** |
+| T1.3 | 4 | **6** | | T3.2 | 2 | **4** |
+| T1.4 | 22 | **37** | | T3.3 | 2 · doutrina | **3 · doutrina** |
+| T2.1 | 5 | **8** | | T3.4 | 32 | **58** |
+| T2.2 | 31 | **41** | | T3.5 | 21 | **32** |
+| T2.3 | 11 | **15** | | T4.1 | 21 | **25** |
+| T2.4 | 75 | **103** | | T4.2 | 78 | **118** |
+| T2.5 | 12 | **17** | | T4.3 | 14 | **25** |
+| T2.6 | 9 | **11** | | | | |
+| T2.7 | 33 | **39** | | | | |
+| T2.8 | 10 | **17** | | | | |
+
+Discipline-wide, `direito-processual-penal` rose **194 → 313** (+119) — squarely inside the plan's
+original 90–120 processo-penal estimate, even though the headline gate-surviving count (405) landed
+below the stale 419. `mixed` rose 112 → 147; `other` (non-processual material the gate still let
+through, since the keyword list also covers penal substantive law) rose 510 → 761.
+
+### Hand-verified answer keys (step 6)
+
+Three items, three exams, three different gabarito heading spellings — the exact ambiguity E14
+worried about — checked against the cached PDF's **Tipo 1** block, stored value read from the live
+database over a `mode=ro` connection:
+
+| Exam | Gabarito heading style | Item | Tipo 1 letter (PDF) | Stored `answer_key` |
+|---|---|---|---|---|
+| OAB XXX (11563, 2019, preliminar) | `– TIPO 1 – BRANCO` | 16 | B | **B** ✅ |
+| OAB 39º (15122, 2023, definitivo) | `- PROVA 1` | 22 | A | **A** ✅ |
+| OAB 44º (17000, 2025, definitivo) | bare `PROVA TIPO 1` | 34 | C | **C** ✅ |
+
+All three match. No Tipo 2–4 contamination found. The 39º's gabarito also carries a
+`TIPO 1 TIPO 2 TIPO 3 TIPO 4` correspondence-table header later in the same file — the exact false
+positive E14 built the scoping guard against — and the check still landed on the right block.
+
+### Shortlists read by hand (step 7)
+
+`T3.3`, `T1.3` and `T2.1` (21 written total). In all three: `mcq4` alternatives render as clean
+`A)`–`D)` lists; attribution carries banca, certame, year and source URL on every entry; no stem
+shows a mid-sentence splice from the column crop; and both preliminary-key items found
+(`T3.3` #3, `T1.3` #5) show the `⚠ **Sinalizada:** \`gabarito_preliminar\`` banner with its detail
+line (*"gabarito preliminar, sujeito a alteração após recursos"*) exactly as designed.
+
+### Things the run surfaced that are not M2.5 defects
+
+1. **The pre-existing M1 classify/vet failure recurred**, unchanged: question
+   `5db1074aa1d6e62fe798225273cb44478f588211c5040c04c255495787d734d8` (`hf-oab-exams`, OAB 2013-10)
+   still fails both stages — `gemini->openai produced invalid output 3x` — almost certainly the same
+   provider safety-filter case the M2 result section flagged. It is the only unvetted/unclassified
+   row in the whole 1222-row corpus. Not one of M2.5's 405.
+2. **`certo_errado` rendering is confirmed broken**, as already reported by the professor and already
+   under separate investigation: several `certo_errado` entries in the shortlists read for step 7
+   (e.g. `T3.3` #1–2, `T1.3` #2) render the stem and jump straight to `<details>`/**Resposta** with
+   no Certo/Errado alternatives shown. This run did not touch that code. The `mcq4` entries in the
+   same files are the contrast case and render correctly — four labelled alternatives every time —
+   which is useful evidence for that fix's own verification.
+3. **T3.3 ("Regimes de avaliação da prova e standards probatórios") is no longer empty.** It already
+   carried 2 candidates before this run (both Cebraspe `certo_errado`) and picked up a third, a new
+   OAB `mcq4` item, in this run — the shortlist still labels it `· doutrina` and prints the
+   normal candidate list rather than the "opens by doutrina" message, since `render_shortlist` only
+   shows that message when there are zero candidates. This makes `CLAUDE.md`'s line "**T3.3** stays
+   empty by design" stale. Flagged for a separate edit, not made here.
+4. **`bqpp harvest --dry-run` could not preview `oab-1f-penal`.** `oab_1f.harvest_source` uses one
+   shared `Fetcher` pointed at its own `raw_dir/oab_1f` cache for the seed page, all 46 exam index
+   pages, *and* the PDFs — a deliberate, documented trade in the adapter's own docstring (one pacer
+   per host beats etiquette-splitting across two cache directories). The recon sweep only warmed that
+   directory with the 38 PDFs, not the index pages, which live in the M2-era `raw_dir/oab` cache
+   instead. `--dry-run` forces `offline=True`, so the dry run hit `not in the cache and offline mode
+   is on` on the seed URL and printed nothing for this source, rather than the 19-exam preview Task 7
+   Step 1 expected. The real (non-dry) run fetched all 46 index pages live, which is why it took
+   roughly two minutes rather than the ~one-minute, 38-PDF estimate in Step 2. Not a defect — the
+   trade is sound and correctly documented — but the plan's Step 1 expectation ("19 exams listed with
+   their two URLs each, nothing written") did not hold for this source specifically, only for the
+   five pre-existing ones.
 
 ---
 
