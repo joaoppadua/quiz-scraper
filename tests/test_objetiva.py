@@ -521,13 +521,40 @@ def test_banded_a_stray_tipo_mention_does_not_silently_truncate_the_block():
     and because it sits *inside* the real Tipo 1 block, treating it as a scope
     boundary silently drops the block's tail (items 6-10 here) without raising
     — truncation removes a contiguous run, so the existing contiguity check
-    does not catch it either. `_block_headings` fixes this: a match only
-    counts as a boundary if the next band-head row it introduces restarts
-    numbering at item 1, and the stray note here is followed by "6 7 8 9 10",
-    which does not."""
+    does not catch it either. `_block_headings`/`_restarts_at_item_one` fix
+    this: a match only counts as a boundary if the next genuine band pair it
+    introduces restarts numbering at item 1, and the stray note here is
+    followed by the valid pair "6 7 8 9 10" / "A B C D E", which does not."""
     text = (
         "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n"
         "Nota: revisado conforme edital da prova tipo 1.\n"
+        "6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    grid = read_grid(text, style="banded", tipo=1)
+    assert grid == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A", 7: "B", 8: "C", 9: "D", 10: "E"}
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B", 7: "C", 8: "D", 9: "E", 10: "A"}
+
+
+def test_banded_a_coincidental_head_row_with_no_valid_answer_does_not_end_the_block():
+    """Fix-round-2, Important finding A (continued): fix-round-1's remedy checked
+    only that the first band-head-shaped row after a candidate heading opened
+    with "1", not that it paired with a genuine answer row beneath it. A stray
+    heading-shaped mention can be immediately followed by an *unrelated*
+    all-integer row that happens to start at 1 ("1 6 11 16 21") purely by
+    coincidence, whose own next line ("P Q R S T") is not answer-shaped at all
+    — round-1's check accepted this as "restarts at 1" and truncated the block
+    anyway. `_restarts_at_item_one` now requires a full genuine pair (head row
+    *and* a conforming answer row beneath it), so the coincidental row is
+    skipped and scanning continues to the real pair ("6 7 8 9 10" / "A B C D
+    E"), which does not restart at 1 — the stray note is still correctly
+    rejected as a boundary, and Tipo 1 recovers all 10 items."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n"
+        "Nota: revisado conforme edital da prova tipo 1.\n"
+        "1 6 11 16 21\n"
+        "P Q R S T\n"
         "6 7 8 9 10\nA B C D E\n"
         "PROVA TIPO 2\n1 2 3 4 5\nB C D E A\n6 7 8 9 10\nB C D E A\n"
     )

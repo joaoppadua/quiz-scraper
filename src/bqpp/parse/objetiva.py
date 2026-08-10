@@ -337,17 +337,46 @@ def _read_interleaved(text: str) -> dict[int, str | None]:
     return grid
 
 
-def _next_band_head_tokens(text: str, after: int) -> list[str] | None:
-    """The tokens of the first band-head-shaped line at or after `after`, or None
-    if the rest of the text has none."""
-    for line in text[after:].splitlines():
-        if _BAND_HEAD_ROW.match(line):
-            return line.split()
-    return None
+def _restarts_at_item_one(text: str, after: int) -> bool:
+    """Whether the first *genuine band pair* anywhere after `after` restarts item
+    numbering at 1.
+
+    A genuine pair is a `_BAND_HEAD_ROW` line **and** a `_BAND_ANSWER_ROW` line
+    directly beneath it — not just a row that merely looks like a head row.
+    Fix-round-2 of the task-3 review reproduced a case fix-round-1 missed: a
+    stray heading-shaped mention immediately followed by an *unrelated*
+    all-integer row that happened to start at 1 ("1 6 11 16 21") but whose next
+    line ("P Q R S T") was not answer-shaped at all. Requiring the full pair, not
+    merely its head row, rejects that coincidence and keeps scanning forward to
+    the next head-row candidate — which is the real one.
+
+    This also makes `_BAND_ANSWER_ROW` load-bearing for scope detection itself,
+    not only for the pairing loop in `_read_banded` (fix-round-1's Finding B
+    noted the guard changed no real-file outcome; it now does).
+
+    **Documented residual, not a closed gap**: if a stray heading-shaped line is
+    immediately followed by a *perfectly well-formed* band pair that itself
+    restarts at item 1 — a real-looking head row and a real-looking answer row,
+    genuinely starting at 1 — it is locally indistinguishable from an actual
+    block start, and no rule confined to this function can tell them apart. This
+    is an accepted limit, not one this function closes. The mitigation lives one
+    layer up, at the caller: reading all four tipos and cross-checking that they
+    recover the same entry count surfaces a truncated tipo that this function
+    cannot detect on its own (task-3 fix-round-2 report, "note to Task 6").
+    """
+    lines = text[after:].splitlines()
+    for i, line in enumerate(lines):
+        if not _BAND_HEAD_ROW.match(line):
+            continue
+        if i + 1 >= len(lines) or not _BAND_ANSWER_ROW.match(lines[i + 1]):
+            continue
+        return line.split()[0] == "1"
+    return False
 
 
 def _block_headings(text: str) -> list[re.Match]:
-    """Every `_TIPO_HEAD` match that genuinely begins a new block.
+    """Every `_TIPO_HEAD` match that genuinely begins a new block — see
+    `_restarts_at_item_one` for what "genuinely" means and its documented limit.
 
     Fix-round-1, Important finding A of the task-3 review: the ≤60-char guard
     alone lets a short line that merely *mentions* a tipo in passing (a
@@ -355,20 +384,10 @@ def _block_headings(text: str) -> list[re.Match]:
     silently truncate the requested block, and because truncation drops a
     contiguous *tail* the existing contiguity check does not catch it. The fix
     is not "does this line look heading-shaped" but "does a new block of
-    answers actually start here" — and a block always restarts its own item
-    numbering at 1. So a match only counts as a boundary if the first
-    band-head-shaped row that follows it opens with "1". A stray mention is
-    followed by whatever row happens to come next (item 6, 21, ...) and is
-    correctly rejected; a genuine tipo heading and the correspondence table's
-    own column header (whose body row is "1 4 6 2 ...") both restart at 1 and
-    are correctly kept.
+    answers actually start here", and a block always restarts its own item
+    numbering at 1.
     """
-    headings = []
-    for h in _TIPO_HEAD.finditer(text):
-        tokens = _next_band_head_tokens(text, h.end())
-        if tokens and tokens[0] == "1":
-            headings.append(h)
-    return headings
+    return [h for h in _TIPO_HEAD.finditer(text) if _restarts_at_item_one(text, h.end())]
 
 
 def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
