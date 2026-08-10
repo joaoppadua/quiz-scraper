@@ -442,3 +442,150 @@ def test_mpf_parses_byte_identically_after_the_choice_marker_widened():
         _structure_signature(items)
         == "ad1e6848b87c16e2dc05da8d64eff4496f44f0e5cea780421e58a02ba701bbb6"
     )
+
+
+# ---- grids: banded (OAB 1a-fase, M2.5 Task 3, amendment E14) --------------
+#
+# Four heading spellings occur across the 19 real gabaritos, and the pattern that
+# binds on the tipo token matches more than four times per file — the tabela de
+# correspondência that follows Tipo 4 repeats the tipo tokens, including a
+# "TIPO 1 TIPO 2 TIPO 3 TIPO 4" column header. So read_grid(style="banded") takes
+# the *first* match for the requested tipo and scopes to the *next* heading of any
+# tipo; raising on many matches (not just none) is the specific trap this guards.
+
+EXAME43 = (OAB_FIX / "exame_43_gabarito.txt").read_text(encoding="utf-8")
+EXAME29 = (OAB_FIX / "exame_29_gabarito.txt").read_text(encoding="utf-8")
+
+
+def test_banded_tipo1_reads_all_80_answers_with_two_annulments():
+    grid = read_grid(EXAME43, style="banded", tipo=1)
+    assert len(grid) == 80
+    assert set(grid) == set(range(1, 81))
+    annulled = sorted(n for n, v in grid.items() if v is None)
+    assert annulled == [1, 74]
+
+
+def test_banded_scoping_each_tipo_has_its_own_annulled_set():
+    """The scoping regression: a mis-scoped implementation returns the same block
+    (or Tipo 4's, since it is scanned last) for every tipo. Each tipo's annulled
+    pair is different in the fixture, so asserting all four proves real scoping."""
+    expected = {1: [1, 74], 2: [4, 73], 3: [6, 71], 4: [2, 72]}
+    for tipo, want in expected.items():
+        grid = read_grid(EXAME43, style="banded", tipo=tipo)
+        assert len(grid) == 80, f"tipo {tipo} did not recover all 80 answers"
+        annulled = sorted(n for n, v in grid.items() if v is None)
+        assert annulled == want, f"tipo {tipo} annulled set"
+
+
+def test_banded_tipo1_and_tipo2_disagree_on_a_specific_item():
+    """Not merely different annulments — different letters too, so a scope that
+    reused Tipo 2's rows for a Tipo 1 request could not pass this."""
+    tipo1 = read_grid(EXAME43, style="banded", tipo=1)
+    tipo2 = read_grid(EXAME43, style="banded", tipo=2)
+    assert tipo1[2] == "C"
+    assert tipo2[2] == "A"
+    assert tipo1[2] != tipo2[2]
+
+
+def test_banded_tipo_none_raises():
+    with pytest.raises(GridError):
+        read_grid(EXAME43, style="banded")
+
+
+def test_banded_tipo_that_does_not_occur_raises():
+    with pytest.raises(GridError):
+        read_grid(EXAME43, style="banded", tipo=9)
+
+
+def test_banded_head_and_answer_row_length_mismatch_names_both_counts():
+    text = "PROVA TIPO 1\n1 2 3 4 5\nA B C\n"
+    with pytest.raises(GridError) as exc_info:
+        read_grid(text, style="banded", tipo=1)
+    message = str(exc_info.value)
+    assert "5" in message
+    assert "3" in message
+
+
+def test_banded_non_contiguous_recovery_is_rejected():
+    text = "PROVA TIPO 1\n1 2 3 4 10\nA B C D E\n"
+    with pytest.raises(GridError):
+        read_grid(text, style="banded", tipo=1)
+
+
+# ---- banded: the second real spelling, plus the correspondência table trap -
+
+
+def test_banded_endash_tipo_spelling_reads_all_four_tipos():
+    """exame_29's heading is 'XXIX EXAME DE ORDEM UNIFICADO – TIPO n – COR' — a
+    different spelling from the 43º's 'PROVA TIPO n', with en-dashes either side
+    of the tipo token instead of the word PROVA."""
+    for tipo in (1, 2, 3, 4):
+        grid = read_grid(EXAME29, style="banded", tipo=tipo)
+        assert len(grid) == 80
+        assert set(grid) == set(range(1, 81))
+
+
+def test_banded_endash_spelling_table_trap_does_not_corrupt_the_last_tipo():
+    """exame_29 also carries the tabela de correspondência after Tipo 4, whose
+    column header repeats 'TIPO 1 TIPO 2 TIPO 3 TIPO 4' and whose body is pure
+    integer pairs. If Tipo 4's scope leaked past the header into the table body,
+    the table's raw numbers would either corrupt the grid with garbage letters or
+    break contiguity — this pins clean recovery instead."""
+    grid = read_grid(EXAME29, style="banded", tipo=4)
+    assert len(grid) == 80
+    assert set(grid) == set(range(1, 81))
+    assert all(v is None or v in "ABCDE" for v in grid.values())
+
+
+# ---- banded: heading spellings with no committed fixture (synthetic, per the
+# ---- task brief — these test a regex against a heading *shape*, not exam
+# ---- content, so a minimal inline string is legitimate here) --------------
+
+
+def test_banded_prova_n_spelling_with_no_tipo_token():
+    """39º-style: 'XXXIX EXAME DE ORDEM UNIFICADO - PROVA 1' has no 'TIPO' token
+    at all — just PROVA directly followed by the number."""
+    text = (
+        "XXXIX EXAME DE ORDEM UNIFICADO - PROVA 1\n"
+        "1 2 3 4 5 6\n"
+        "A B C D E A\n"
+        "XXXIX EXAME DE ORDEM UNIFICADO - PROVA 2\n"
+        "1 2 3 4 5 6\n"
+        "B C D E A B\n"
+    )
+    grid1 = read_grid(text, style="banded", tipo=1)
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid1 == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A"}
+    assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B"}
+
+
+def test_banded_bare_prova_tipo_spelling_with_no_exam_prefix():
+    """44º-style: a bare 'PROVA TIPO 1' with no exam-number/ordinal prefix at all."""
+    text = "PROVA TIPO 1\n1 2 3 4 5 6\n* B C D E A\nPROVA TIPO 2\n1 2 3 4 5 6\nB C D E A B\n"
+    grid1 = read_grid(text, style="banded", tipo=1)
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid1 == {1: None, 2: "B", 3: "C", 4: "D", 5: "E", 6: "A"}
+    assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B"}
+
+
+# ---- banded: regression — the other two styles are unchanged and still refuse -
+
+
+def test_paired_rows_and_interleaved_are_unchanged_after_banded_is_added():
+    grid = read_grid(PAIRED, style="paired_rows")
+    assert len(grid) == 10 and grid[1] == "C" and grid[5] is None
+
+    grid = read_grid(
+        (FIX / "mprs_50_grid.txt").read_text(encoding="utf-8"), style="interleaved"
+    )
+    assert len(grid) == 100
+
+
+def test_paired_rows_rejects_an_oab_gabarito():
+    with pytest.raises(GridError):
+        read_grid(EXAME43, style="paired_rows")
+
+
+def test_interleaved_rejects_an_oab_gabarito():
+    with pytest.raises(GridError):
+        read_grid(EXAME43, style="interleaved")

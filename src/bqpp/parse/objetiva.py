@@ -10,10 +10,15 @@ annulment token. Neither generalises. Two distinct layouts occur across the seed
   interleaved (MPRS, MPF)  several `number answer` cells on one physical line:
                            `1 ANULADA   26 A   51 C   76 E`
 
-and annulment is written four different ways: `X`, `ANULADA`, `N`, and a `-` in the
-justificativa tables. So `read_grid` refuses to guess: a grid whose convention it
-cannot positively identify raises rather than defaulting to "nothing annulled",
-because that default silently ships wrong answer keys.
+  banded (OAB 1a-fase)     a row of bare item numbers, then a row of the same many
+                           letters directly beneath it — `1 2 3 ... 20` over
+                           `C A A C ...` — repeated once per "tipo": one gabarito
+                           file carries all four tipos of one exam back to back.
+
+and annulment is written five different ways: `X`, `ANULADA`, `N`, `*` (the OAB's),
+and a `-` in the justificativa tables. So `read_grid` refuses to guess: a grid
+whose convention it cannot positively identify raises rather than defaulting to
+"nothing annulled", because that default silently ships wrong answer keys.
 """
 
 from __future__ import annotations
@@ -59,6 +64,37 @@ _CELL = re.compile(r"(\d{1,3})[ \t]+(ANULAD[AO]|[A-EN]|X)(?![A-Za-zÀ-ÿ])")
 # A grid row is nothing but cells. Prose lines that merely contain a cell-shaped
 # fragment ("As questões 1 a 14", "(C) Apenas 3 e 4", a margin line number) are not.
 _GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-zÀ-ÿ])[ \t]*)+$")
+
+# The OAB's "tipo" heading has four spellings across its 19 gabaritos (amendment
+# E14, measured in the M2.5 recon sweep):
+#   "PROVA TIPO 1"                                       (44º)
+#   "43º EXAME DE ORDEM - PROVA TIPO 1"                  (42º onward)
+#   "XXVIII EXAME DE ORDEM UNIFICADO – TIPO 1 – BRANCO"  (2019 .. 2023-03, en-dashes)
+#   "XXXIX EXAME DE ORDEM UNIFICADO - PROVA 1"           (39º, no "TIPO" token at all)
+# Nothing is common to all four but the tipo token itself, so the pattern binds on
+# that alone and rejects prose by requiring a short line. The one place a longer
+# line would otherwise match is the correspondence table's explanatory paragraph
+# ("...a numeração da questão na prova de Tipo 1 e sua correspondência..."); the
+# table's own column header ("TIPO 1 TIPO 2 TIPO 3 TIPO 4 TIPO 1 TIPO 2 TIPO 3
+# TIPO 4") is short enough to match too, and that is by design — it is what ends
+# Tipo 4's scope before the table's own numeric rows would otherwise pass as more
+# bands. Matches more than four times per file; `_read_banded` takes the first
+# match for the requested tipo and scopes to the next match of any tipo, and
+# raises only when there is no match at all.
+_TIPO_HEAD = re.compile(
+    r"^[ \t]*(?=[^\n]{1,60}$)[^\n]*?\b(?:PROVA[ \t]+TIPO|TIPO|PROVA)[ \t]+0?([1-9])\b[^\n]*$",
+    re.M | re.I,
+)
+
+# A band's head row: five or more bare item numbers on their own line. Its answer
+# row sits directly beneath, drawn from the same alphabet `_verdict` already
+# knows — the OAB always writes annulment "*", already in ANNULMENT_TOKENS, so
+# no new constant is needed. Requiring the answer row to look like verdict tokens
+# (not more bare digits) keeps the *tabela de correspondência* — whose body is
+# nothing but integer pairs — from ever being mistaken for a band.
+_BAND_HEAD_ROW = re.compile(r"^[ \t]*\d{1,3}(?:[ \t]+\d{1,3}){4,}[ \t]*$")
+_BAND_TOKEN = r"(?:ANULAD[AO]|[A-EXN*])"
+_BAND_ANSWER_ROW = re.compile(rf"^[ \t]*{_BAND_TOKEN}(?:[ \t]+{_BAND_TOKEN})*[ \t]*$")
 
 
 # Running heads and page numbers, which sit between questions in the extracted text
@@ -241,12 +277,20 @@ def segment_objetiva(
     return items
 
 
-def read_grid(text: str, *, style: str) -> dict[int, str | None]:
-    """Answer grid as {item number: letter}, with None for an annulled item."""
+def read_grid(text: str, *, style: str, tipo: int | None = None) -> dict[int, str | None]:
+    """Answer grid as {item number: letter}, with None for an annulled item.
+
+    `tipo` is required (and only meaningful) for `style="banded"` — the OAB's
+    gabarito carries all four tipos of one exam in a single file, and a caller
+    must say which one it wants rather than getting whichever the parser scans
+    last.
+    """
     if style == "paired_rows":
         return _read_paired_rows(text)
     if style == "interleaved":
         return _read_interleaved(text)
+    if style == "banded":
+        return _read_banded(text, tipo)
     raise GridError(f"unknown grid style {style!r}")
 
 
@@ -289,13 +333,59 @@ def _read_interleaved(text: str) -> dict[int, str | None]:
             grid[int(n)] = _verdict(v)        # a later row supersedes an earlier one
     if not grid:
         raise GridError("no grid rows found (a grid row contains nothing but cells)")
+    _check_contiguous(grid)
+    return grid
+
+
+def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
+    """OAB 1a-fase gabarito: a row of item numbers, then a row of the same many
+    letters directly beneath it, repeated once per tipo (all four share one file).
+
+    Scoping to the requested tipo is mandatory, not best-effort: every tipo shares
+    the same 1..80 numbering, so an unscoped read lets a later tipo's rows silently
+    supersede an earlier tipo's at the exact same item numbers, and ships the wrong
+    tipo's answers as fact.
+    """
+    if not tipo:
+        raise GridError("style 'banded' requires a tipo")
+    heads = list(_TIPO_HEAD.finditer(text))
+    wanted = [h for h in heads if int(h.group(1)) == tipo]
+    if not wanted:
+        raise GridError(f"no heading found for tipo {tipo}")
+    start = wanted[0].end()          # the first match for the requested tipo
+    later = [h for h in heads if h.start() > start]
+    end = later[0].start() if later else len(text)   # the next heading, of any tipo
+    block = text[start:end]
+
+    lines = block.splitlines()
+    grid: dict[int, str | None] = {}
+    for i, line in enumerate(lines):
+        if not _BAND_HEAD_ROW.match(line) or i + 1 >= len(lines):
+            continue
+        if not _BAND_ANSWER_ROW.match(lines[i + 1]):
+            continue
+        numbers = line.split()
+        verdicts = lines[i + 1].split()
+        if len(numbers) != len(verdicts):
+            raise GridError(
+                f"misaligned band for tipo {tipo}: "
+                f"{len(numbers)} numbers vs {len(verdicts)} verdicts"
+            )
+        for n, v in zip(numbers, verdicts, strict=True):
+            grid[int(n)] = _verdict(v)
+    if not grid:
+        raise GridError(f"no number/letter bands found for tipo {tipo}")
+    _check_contiguous(grid)
+    return grid
+
+
+def _check_contiguous(grid: dict[int, str | None]) -> None:
     numbers = sorted(grid)
     if numbers != list(range(numbers[0], numbers[0] + len(numbers))):
         raise GridError(
             f"recovered item numbers are not contiguous ({numbers[0]}..{numbers[-1]}, "
             f"{len(numbers)} entries) — this is probably not an answer grid"
         )
-    return grid
 
 
 def _verdict(token: str) -> str | None:
