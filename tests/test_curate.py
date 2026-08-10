@@ -169,6 +169,78 @@ def test_a_question_without_context_renders_unchanged():
     assert "> _" not in md, "no empty context block"
 
 
+# ---- fix: certo/errado response space + unambiguous verdict -------------------
+
+
+def _mcq4_with_answer_c(qid):
+    """An mcq4 whose gabarito letter happens to collide with the certo/errado
+    verdict letter 'C' — the exact collision the professor hit in T1.3.md."""
+    return Question(
+        id=qid, source_doc_id="d1", question_number=qid, format="mcq4",
+        stem="Assinale a alternativa correta.",
+        choices=[
+            {"label": "A", "text": "primeira"},
+            {"label": "B", "text": "segunda"},
+            {"label": "C", "text": "terceira"},
+            {"label": "D", "text": "quarta"},
+        ],
+        answer_key="C", vet_status="ok",
+    )
+
+
+def test_certo_errado_renders_the_response_space_and_verdict_certo():
+    q = Question(
+        id="q1", source_doc_id="d1", question_number="2", format="certo_errado",
+        stem="O flagrante forjado por policiais afasta a legalidade da prisão.",
+        answer_key="C", answer_rationale="Certo. ...", vet_status="ok",
+    )
+    md = render_shortlist("T3.4", "Provas em espécie", [(q, None)], semester="2026.2")
+    assert "- **C)** Certo" in md
+    assert "- **E)** Errado" in md
+    assert "**Resposta:** CERTO" in md
+
+
+def test_certo_errado_renders_verdict_errado():
+    q = Question(
+        id="q1", source_doc_id="d1", question_number="3", format="certo_errado",
+        stem="A prisão preventiva prescinde de fundamentação concreta.",
+        answer_key="E", vet_status="ok",
+    )
+    md = render_shortlist("T3.4", "Provas em espécie", [(q, None)], semester="2026.2")
+    assert "**Resposta:** ERRADO" in md
+
+
+def test_mcq4_alternatives_and_bare_answer_letter_are_unchanged():
+    q = _mcq4_with_answer_c("m1")
+    md = render_shortlist("T1.2", "x", [(q, None)], semester="2026.2")
+    assert "- **A)** primeira" in md
+    assert "- **C)** terceira" in md
+    assert "**Resposta:** C" in md
+    answer_lines = [line for line in md.splitlines() if line.startswith("**Resposta:**")]
+    assert answer_lines == ["**Resposta:** C"]
+
+
+def test_dissertativa_and_peca_render_without_an_options_block():
+    for fmt in ("dissertativa", "peca"):
+        q = Question(id=f"q-{fmt}", source_doc_id="d1", format=fmt, stem="Enunciado.",
+                     vet_status="ok")
+        md = render_shortlist("T1.1", "x", [(q, None)], semester="2026.2")
+        assert "- **" not in md, f"{fmt} must not render an options block"
+        assert "**Resposta:** — (discursiva)" in md
+
+
+def test_certo_errado_and_mcq4_answer_lines_are_not_confusable_in_one_document():
+    """The professor's exact bug: entry 2 (certo_errado, answer_key='C') and entry 3
+    (mcq4, answer_key='C') rendered the identical string '**Resposta:** C'."""
+    ce = Question(id="ce1", source_doc_id="d1", question_number="2", format="certo_errado",
+                  stem="Proposição.", answer_key="C", vet_status="ok")
+    mc = _mcq4_with_answer_c("mc1")
+    md = render_shortlist("T1.3", "x", [(ce, None), (mc, None)], semester="2026.2")
+    answer_lines = [line for line in md.splitlines() if line.startswith("**Resposta:**")]
+    assert answer_lines == ["**Resposta:** CERTO", "**Resposta:** C"]
+    assert len(set(answer_lines)) == 2, "the two answer lines must not be identical strings"
+
+
 def test_a_doctrine_subtopic_says_so_instead_of_reporting_a_gap(tmp_path):
     from bqpp.config import load_settings, load_taxonomy
     from bqpp.curate import run_curate

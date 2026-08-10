@@ -44,10 +44,29 @@ def rank_candidates(
     return sorted(candidates, key=key)
 
 
+# Cebraspe's certo/errado items carry no `choices` — the banca never prints
+# "Certo/Errado" under the item, so the corpus must not fabricate it as stored
+# content (spec §15). The response space is a rendering fact, not corpus content:
+# it is synthesised here, at render time, never written back to the database.
+_VERDICT_LABELS = {"C": "Certo", "E": "Errado"}
+
+
 def _fmt_choices(q: Question) -> str:
+    if q.format == "certo_errado":
+        return "\n".join(f"- **{key})** {label}" for key, label in _VERDICT_LABELS.items())
     if not q.choices:
         return ""
     return "\n".join(f"- **{c['label']})** {c['text']}" for c in q.choices)
+
+
+def _fmt_answer(q: Question) -> str:
+    """The bare letter 'C' is ambiguous: it means *alternativa C* for mcq4/mcq5 but
+    *Certo* for certo_errado, and 126 of 236 certo/errado questions have answer_key
+    'C' — over half the corpus would otherwise print an mcq-shaped answer for a
+    true/false item. Spell the verdict out so the two forms can never be confused."""
+    if q.format == "certo_errado" and q.answer_key in _VERDICT_LABELS:
+        return f"**Resposta:** {_VERDICT_LABELS[q.answer_key].upper()}"
+    return f"**Resposta:** {q.answer_key or '— (discursiva)'}"
 
 
 def render_shortlist(
@@ -122,10 +141,10 @@ def render_shortlist(
             out += [f"> {line}" for line in q.stem_context.splitlines() if line.strip()]
             out += [""]
         out += [q.stem, ""]
-        if q.choices:
+        if q.choices or q.format == "certo_errado":
             out += [_fmt_choices(q), ""]
         out += ["<details>", "<summary><strong>Gabarito e fundamentação</strong></summary>", ""]
-        out.append(f"**Resposta:** {q.answer_key or '— (discursiva)'}")
+        out.append(_fmt_answer(q))
         if q.answer_rationale:
             out += ["", "**Gabarito comentado da banca:**", "", q.answer_rationale]
         if q.pedagogy_note:
