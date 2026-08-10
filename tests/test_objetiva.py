@@ -512,6 +512,31 @@ def test_banded_non_contiguous_recovery_is_rejected():
         read_grid(text, style="banded", tipo=1)
 
 
+def test_banded_a_stray_tipo_mention_does_not_silently_truncate_the_block():
+    """Fix-round-1, Important finding A of the task-3 review. The ≤60-char guard
+    alone requires only that the line be short; it says nothing about whether a
+    new block of answers actually starts there. A retificado/errata note that
+    happens to mention "prova tipo 1" in passing (a live possibility — the OAB
+    does republish corrected gabaritos) is short enough to match `_TIPO_HEAD`,
+    and because it sits *inside* the real Tipo 1 block, treating it as a scope
+    boundary silently drops the block's tail (items 6-10 here) without raising
+    — truncation removes a contiguous run, so the existing contiguity check
+    does not catch it either. `_block_headings` fixes this: a match only
+    counts as a boundary if the next band-head row it introduces restarts
+    numbering at item 1, and the stray note here is followed by "6 7 8 9 10",
+    which does not."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n"
+        "Nota: revisado conforme edital da prova tipo 1.\n"
+        "6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    grid = read_grid(text, style="banded", tipo=1)
+    assert grid == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A", 7: "B", 8: "C", 9: "D", 10: "E"}
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B", 7: "C", 8: "D", 9: "E", 10: "A"}
+
+
 # ---- banded: the second real spelling, plus the correspondência table trap -
 
 
@@ -525,16 +550,59 @@ def test_banded_endash_tipo_spelling_reads_all_four_tipos():
         assert set(grid) == set(range(1, 81))
 
 
-def test_banded_endash_spelling_table_trap_does_not_corrupt_the_last_tipo():
+def test_banded_endash_spelling_scoping_gives_each_tipo_its_own_content():
+    """Fix-round-1, Important finding C of the task-3 review: exame_29 has zero
+    annulments, so the annulled-set trick that catches a scoping bug in exame_43
+    is unavailable here, and the previous version of this test asserted only
+    counts and key ranges — a mutant that always reads Tipo 1's block regardless
+    of the requested tipo passed it. Item 1 differs across all four tipos in this
+    fixture (verified against the raw text), so asserting it here kills exactly
+    that mutant: a "return Tipo 1 always" implementation would answer 'D' to
+    every one of the four calls below, not the three distinct correct letters."""
+    grid1 = read_grid(EXAME29, style="banded", tipo=1)
+    grid2 = read_grid(EXAME29, style="banded", tipo=2)
+    grid3 = read_grid(EXAME29, style="banded", tipo=3)
+    grid4 = read_grid(EXAME29, style="banded", tipo=4)
+    assert grid1[1] == "D"
+    assert grid2[1] == "A"
+    assert grid3[1] == "B"
+    assert grid4[1] == "B"
+    assert grid1[1] not in (grid2[1], grid3[1], grid4[1])
+
+
+def test_banded_endash_spelling_tipo4_scope_ends_before_the_correspondencia_table():
     """exame_29 also carries the tabela de correspondência after Tipo 4, whose
     column header repeats 'TIPO 1 TIPO 2 TIPO 3 TIPO 4' and whose body is pure
-    integer pairs. If Tipo 4's scope leaked past the header into the table body,
-    the table's raw numbers would either corrupt the grid with garbage letters or
-    break contiguity — this pins clean recovery instead."""
+    integer pairs. What actually protects Tipo 4's read here is `_TIPO_HEAD`
+    matching that column header (it restarts band-head numbering at 1, so
+    `_block_headings` accepts it) and ending Tipo 4's scope right there, before
+    any table row is in scope at all — not `_BAND_ANSWER_ROW` (fix-round-1,
+    Important finding B of the task-3 review: stubbing that guard out changes
+    nothing here, or on any of the 19 real gabaritos, precisely because scope
+    never reaches a table row in real data). This test pins that scoping
+    behaviour, named for what it actually verifies; `_BAND_ANSWER_ROW`'s own
+    necessity is pinned directly, on synthetic input, by
+    `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope` below."""
     grid = read_grid(EXAME29, style="banded", tipo=4)
     assert len(grid) == 80
     assert set(grid) == set(range(1, 81))
     assert all(v is None or v in "ABCDE" for v in grid.values())
+
+
+def test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope():
+    """Direct unit test for `_BAND_ANSWER_ROW`'s own necessity (fix-round-1,
+    Important finding B): a pair of all-integer rows sitting inside a tipo's
+    scope, with no intervening heading to end the scope first, must not be
+    read as more answers. The chosen numbers (6-10) are deliberately
+    contiguous with the real band's numbers (1-5): without the guard, `_verdict`
+    would pass the bare digit strings "11".."15" through unchanged as if they
+    were answer letters, and because 1-10 stays contiguous even with that
+    garbage mixed in, the existing contiguity check would not catch it either
+    — a silent corruption, not a raised GridError."""
+    text = "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\n11 12 13 14 15\n"
+    grid = read_grid(text, style="banded", tipo=1)
+    assert grid == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E"}
+    assert 6 not in grid, "the table-shaped continuation must not be read as answers"
 
 
 # ---- banded: heading spellings with no committed fixture (synthetic, per the

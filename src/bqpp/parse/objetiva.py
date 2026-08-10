@@ -72,15 +72,14 @@ _GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-
 #   "XXVIII EXAME DE ORDEM UNIFICADO – TIPO 1 – BRANCO"  (2019 .. 2023-03, en-dashes)
 #   "XXXIX EXAME DE ORDEM UNIFICADO - PROVA 1"           (39º, no "TIPO" token at all)
 # Nothing is common to all four but the tipo token itself, so the pattern binds on
-# that alone and rejects prose by requiring a short line. The one place a longer
-# line would otherwise match is the correspondence table's explanatory paragraph
-# ("...a numeração da questão na prova de Tipo 1 e sua correspondência..."); the
-# table's own column header ("TIPO 1 TIPO 2 TIPO 3 TIPO 4 TIPO 1 TIPO 2 TIPO 3
-# TIPO 4") is short enough to match too, and that is by design — it is what ends
-# Tipo 4's scope before the table's own numeric rows would otherwise pass as more
-# bands. Matches more than four times per file; `_read_banded` takes the first
-# match for the requested tipo and scopes to the next match of any tipo, and
-# raises only when there is no match at all.
+# that alone and rejects prose by requiring a short line. This still matches more
+# than four times per file (fix-round-1, Important finding A of the task-3
+# review): the correspondence table's column header ("TIPO 1 TIPO 2 TIPO 3 TIPO 4
+# TIPO 1 TIPO 2 TIPO 3 TIPO 4") is short enough to match too, and — more subtly —
+# so can an unrelated short line that merely *mentions* a tipo in passing (a
+# retificado note, an errata). `_block_headings` below is what tells the two
+# apart: a match only counts as a scope boundary if it genuinely begins a new
+# block.
 _TIPO_HEAD = re.compile(
     r"^[ \t]*(?=[^\n]{1,60}$)[^\n]*?\b(?:PROVA[ \t]+TIPO|TIPO|PROVA)[ \t]+0?([1-9])\b[^\n]*$",
     re.M | re.I,
@@ -90,8 +89,9 @@ _TIPO_HEAD = re.compile(
 # row sits directly beneath, drawn from the same alphabet `_verdict` already
 # knows — the OAB always writes annulment "*", already in ANNULMENT_TOKENS, so
 # no new constant is needed. Requiring the answer row to look like verdict tokens
-# (not more bare digits) keeps the *tabela de correspondência* — whose body is
-# nothing but integer pairs — from ever being mistaken for a band.
+# (not more bare digits) is defence-in-depth against a table-shaped pair of
+# integer-only rows landing inside a tipo's scope and being read as answers —
+# see `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
 _BAND_HEAD_ROW = re.compile(r"^[ \t]*\d{1,3}(?:[ \t]+\d{1,3}){4,}[ \t]*$")
 _BAND_TOKEN = r"(?:ANULAD[AO]|[A-EXN*])"
 _BAND_ANSWER_ROW = re.compile(rf"^[ \t]*{_BAND_TOKEN}(?:[ \t]+{_BAND_TOKEN})*[ \t]*$")
@@ -337,6 +337,40 @@ def _read_interleaved(text: str) -> dict[int, str | None]:
     return grid
 
 
+def _next_band_head_tokens(text: str, after: int) -> list[str] | None:
+    """The tokens of the first band-head-shaped line at or after `after`, or None
+    if the rest of the text has none."""
+    for line in text[after:].splitlines():
+        if _BAND_HEAD_ROW.match(line):
+            return line.split()
+    return None
+
+
+def _block_headings(text: str) -> list[re.Match]:
+    """Every `_TIPO_HEAD` match that genuinely begins a new block.
+
+    Fix-round-1, Important finding A of the task-3 review: the ≤60-char guard
+    alone lets a short line that merely *mentions* a tipo in passing (a
+    retificado note, an errata — the OAB does republish corrected gabaritos)
+    silently truncate the requested block, and because truncation drops a
+    contiguous *tail* the existing contiguity check does not catch it. The fix
+    is not "does this line look heading-shaped" but "does a new block of
+    answers actually start here" — and a block always restarts its own item
+    numbering at 1. So a match only counts as a boundary if the first
+    band-head-shaped row that follows it opens with "1". A stray mention is
+    followed by whatever row happens to come next (item 6, 21, ...) and is
+    correctly rejected; a genuine tipo heading and the correspondence table's
+    own column header (whose body row is "1 4 6 2 ...") both restart at 1 and
+    are correctly kept.
+    """
+    headings = []
+    for h in _TIPO_HEAD.finditer(text):
+        tokens = _next_band_head_tokens(text, h.end())
+        if tokens and tokens[0] == "1":
+            headings.append(h)
+    return headings
+
+
 def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
     """OAB 1a-fase gabarito: a row of item numbers, then a row of the same many
     letters directly beneath it, repeated once per tipo (all four share one file).
@@ -348,13 +382,13 @@ def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
     """
     if not tipo:
         raise GridError("style 'banded' requires a tipo")
-    heads = list(_TIPO_HEAD.finditer(text))
+    heads = _block_headings(text)
     wanted = [h for h in heads if int(h.group(1)) == tipo]
     if not wanted:
         raise GridError(f"no heading found for tipo {tipo}")
     start = wanted[0].end()          # the first match for the requested tipo
     later = [h for h in heads if h.start() > start]
-    end = later[0].start() if later else len(text)   # the next heading, of any tipo
+    end = later[0].start() if later else len(text)   # the next block heading, any tipo
     block = text[start:end]
 
     lines = block.splitlines()
