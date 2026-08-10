@@ -72,26 +72,31 @@ _GRID_ROW = re.compile(r"^[ \t]*(?:\d{1,3}[ \t]+(?:ANULAD[AO]|[A-EN]|X)(?![A-Za-
 #   "XXVIII EXAME DE ORDEM UNIFICADO – TIPO 1 – BRANCO"  (2019 .. 2023-03, en-dashes)
 #   "XXXIX EXAME DE ORDEM UNIFICADO - PROVA 1"           (39º, no "TIPO" token at all)
 # Nothing is common to all four but the tipo token itself, so the pattern binds on
-# that alone and rejects prose by requiring a short line. This still matches more
-# than four times per file (fix-round-1, Important finding A of the task-3
-# review): the correspondence table's column header ("TIPO 1 TIPO 2 TIPO 3 TIPO 4
-# TIPO 1 TIPO 2 TIPO 3 TIPO 4") is short enough to match too, and — more subtly —
-# so can an unrelated short line that merely *mentions* a tipo in passing (a
-# retificado note, an errata). `_block_headings` below is what tells the two
-# apart: a match only counts as a scope boundary if it genuinely begins a new
-# block.
+# that alone and rejects prose by requiring a short line. It still matches more
+# than four times per file: the correspondence table's column header
+# ("TIPO 1 TIPO 2 TIPO 3 TIPO 4 TIPO 1 TIPO 2 TIPO 3 TIPO 4") is short enough to
+# match too, and so can an unrelated short line that merely *mentions* a tipo in
+# passing (a retificado note, an errata). `_tipo_blocks` below is what tells a
+# real block start apart from either: not by local lookahead from the heading
+# (three fix rounds of the task-3 review each patched a lookahead condition and
+# each opened a new hole — see that report for the full defect history), but by
+# a whole-file structural parse: every heading and every band pair is found
+# once, each pair is assigned to the heading immediately preceding it, and a
+# heading only counts as a real block start if the *first* pair assigned to it
+# opens at item 1.
 _TIPO_HEAD = re.compile(
     r"^[ \t]*(?=[^\n]{1,60}$)[^\n]*?\b(?:PROVA[ \t]+TIPO|TIPO|PROVA)[ \t]+0?([1-9])\b[^\n]*$",
     re.M | re.I,
 )
 
 # A band's head row: five or more bare item numbers on their own line. Its answer
-# row sits directly beneath, drawn from the same alphabet `_verdict` already
-# knows — the OAB always writes annulment "*", already in ANNULMENT_TOKENS, so
-# no new constant is needed. Requiring the answer row to look like verdict tokens
-# (not more bare digits) is defence-in-depth against a table-shaped pair of
-# integer-only rows landing inside a tipo's scope and being read as answers —
-# see `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
+# row is the next non-blank, non-furniture line beneath it — furniture (a running
+# head, a page break) between a head row and its answer row is ordinary at a PDF
+# page break, and tipo headings sit at page breaks too, so `_band_pairs` tolerates
+# it explicitly rather than requiring strict adjacency. Requiring the answer row
+# to be verdict-shaped, not more bare digits, is what keeps a table-shaped pair
+# of integer-only rows (the correspondência table) from ever being read as
+# answers — see `test_band_answer_row_guard_rejects_a_table_shaped_row_within_scope`.
 _BAND_HEAD_ROW = re.compile(r"^[ \t]*\d{1,3}(?:[ \t]+\d{1,3}){4,}[ \t]*$")
 _BAND_TOKEN = r"(?:ANULAD[AO]|[A-EXN*])"
 _BAND_ANSWER_ROW = re.compile(rf"^[ \t]*{_BAND_TOKEN}(?:[ \t]+{_BAND_TOKEN})*[ \t]*$")
@@ -337,57 +342,110 @@ def _read_interleaved(text: str) -> dict[int, str | None]:
     return grid
 
 
-def _restarts_at_item_one(text: str, after: int) -> bool:
-    """Whether the first *genuine band pair* anywhere after `after` restarts item
-    numbering at 1.
+def _band_pairs(text: str) -> list[tuple[int, list[str], list[str]]]:
+    """Every band pair in the whole text, in order: `(position, numbers, verdicts)`.
 
-    A genuine pair is a `_BAND_HEAD_ROW` line **and** a `_BAND_ANSWER_ROW` line
-    directly beneath it — not just a row that merely looks like a head row.
-    Fix-round-2 of the task-3 review reproduced a case fix-round-1 missed: a
-    stray heading-shaped mention immediately followed by an *unrelated*
-    all-integer row that happened to start at 1 ("1 6 11 16 21") but whose next
-    line ("P Q R S T") was not answer-shaped at all. Requiring the full pair, not
-    merely its head row, rejects that coincidence and keeps scanning forward to
-    the next head-row candidate — which is the real one.
+    A pair is a `_BAND_HEAD_ROW` line and the next non-blank, non-furniture line
+    that is `_BAND_ANSWER_ROW`-shaped. Furniture between a head row and its
+    answer row (a running head, a page break) is ordinary — tipo headings sit at
+    page breaks too — so this tolerance is exactly what `_tipo_blocks` needs from
+    "what counts as a pair" as well: fix-round-3 of the task-3 review found that
+    requiring strict adjacency here made a *genuine* tipo heading (head row and
+    answer row split by one page-furniture line) look like it had no pairs of
+    its own, which silently merged two tipos together — the inverse of
+    fix-round-1/2's truncation defect. One definition of a pair, used by both
+    the scope logic and the actual read, is what keeps the two from drifting
+    apart again.
+    """
+    lines: list[tuple[int, str]] = []
+    pos = 0
+    for raw in text.splitlines(keepends=True):
+        lines.append((pos, raw.rstrip("\n")))
+        pos += len(raw)
 
-    This also makes `_BAND_ANSWER_ROW` load-bearing for scope detection itself,
-    not only for the pairing loop in `_read_banded` (fix-round-1's Finding B
-    noted the guard changed no real-file outcome; it now does).
+    pairs: list[tuple[int, list[str], list[str]]] = []
+    i, n = 0, len(lines)
+    while i < n:
+        head_pos, head_line = lines[i]
+        if not _BAND_HEAD_ROW.match(head_line):
+            i += 1
+            continue
+        j = i + 1
+        while j < n and (not lines[j][1].strip() or _FURNITURE.match(lines[j][1])):
+            j += 1
+        if j < n and _BAND_ANSWER_ROW.match(lines[j][1]):
+            pairs.append((head_pos, head_line.split(), lines[j][1].split()))
+            i = j + 1
+        else:
+            i += 1
+    return pairs
 
-    **Documented residual, not a closed gap**: if a stray heading-shaped line is
+
+def _tipo_blocks(text: str) -> dict[int, list[tuple[list[str], list[str]]]]:
+    """Every tipo's band pairs, keyed by tipo, via one whole-file structural pass.
+
+    Three fix rounds of the task-3 review each patched a local-lookahead
+    boundary predicate ("does this heading look like it starts a real block?")
+    and each opened a new hole — a coincidental row that satisfied the current
+    check, or a genuine pair split by furniture that failed it. Local lookahead
+    cannot see the file's structure; this replaces it with a parse over the
+    whole file:
+
+    1. Every heading candidate (`_TIPO_HEAD`) and every band pair (`_band_pairs`)
+       is found once, over the whole text.
+    2. Each pair is assigned to the heading immediately preceding it.
+    3. A heading is a genuine block start only if the *first* pair assigned to
+       it opens at item 1. A heading whose first pair does not — or which has
+       no pairs assigned at all — is not a block start; its own pairs (if any)
+       merge into whichever real block precedes it. This is what a short line
+       merely mentioning a tipo, or a coincidental head-shaped row with no
+       genuine answer beneath it, resolve to: not a block of their own.
+    4. `_read_banded` picks the requested tipo's *first* real block; a later
+       heading claiming an already-seen tipo (never observed in the 19-exam
+       corpus, since the correspondência table's rows never form a valid pair
+       at all) does not extend it.
+
+    **Documented residual, not a closed gap**: a stray heading-shaped line
     immediately followed by a *perfectly well-formed* band pair that itself
-    restarts at item 1 — a real-looking head row and a real-looking answer row,
-    genuinely starting at 1 — it is locally indistinguishable from an actual
-    block start, and no rule confined to this function can tell them apart. This
-    is an accepted limit, not one this function closes. The mitigation lives one
-    layer up, at the caller: reading all four tipos and cross-checking that they
-    recover the same entry count surfaces a truncated tipo that this function
-    cannot detect on its own (task-3 fix-round-2 report, "note to Task 6").
+    opens at item 1 is genuinely indistinguishable from a real block start —
+    no rule confined to this text can tell them apart, because by construction
+    it looks exactly like one. The mitigation lives one layer up, at the
+    caller: Task 6 is expected to read all four tipos and cross-check that
+    they recover the same entry count, a signal only available there (task-3
+    fix-round-2 report, "note to Task 6"; that note still applies unchanged
+    here — this residual is the same one, not a new one).
     """
-    lines = text[after:].splitlines()
-    for i, line in enumerate(lines):
-        if not _BAND_HEAD_ROW.match(line):
-            continue
-        if i + 1 >= len(lines) or not _BAND_ANSWER_ROW.match(lines[i + 1]):
-            continue
-        return line.split()[0] == "1"
-    return False
+    headings = [(m.start(), int(m.group(1))) for m in _TIPO_HEAD.finditer(text)]
+    pairs = _band_pairs(text)
 
+    # Bucket each pair under the heading immediately preceding it.
+    own: list[list[tuple[list[str], list[str]]]] = [[] for _ in headings]
+    hi = -1
+    for pos, numbers, verdicts in pairs:
+        while hi + 1 < len(headings) and headings[hi + 1][0] <= pos:
+            hi += 1
+        if hi >= 0:
+            own[hi].append((numbers, verdicts))
+        # a pair before any heading at all belongs to nothing; dropped.
 
-def _block_headings(text: str) -> list[re.Match]:
-    """Every `_TIPO_HEAD` match that genuinely begins a new block — see
-    `_restarts_at_item_one` for what "genuinely" means and its documented limit.
+    is_real = [bool(o) and o[0][0][0] == "1" for o in own]
 
-    Fix-round-1, Important finding A of the task-3 review: the ≤60-char guard
-    alone lets a short line that merely *mentions* a tipo in passing (a
-    retificado note, an errata — the OAB does republish corrected gabaritos)
-    silently truncate the requested block, and because truncation drops a
-    contiguous *tail* the existing contiguity check does not catch it. The fix
-    is not "does this line look heading-shaped" but "does a new block of
-    answers actually start here", and a block always restarts its own item
-    numbering at 1.
-    """
-    return [h for h in _TIPO_HEAD.finditer(text) if _restarts_at_item_one(text, h.end())]
+    # Merge each non-real heading's own pairs forward into the nearest
+    # preceding real heading's segment.
+    segments: list[list[tuple[list[str], list[str]]]] = []
+    seg_tipo: list[int] = []
+    for idx, (_, tipo) in enumerate(headings):
+        if is_real[idx]:
+            segments.append(list(own[idx]))
+            seg_tipo.append(tipo)
+        elif segments:
+            segments[-1].extend(own[idx])
+        # else: no real heading yet to merge into; dropped.
+
+    blocks: dict[int, list[tuple[list[str], list[str]]]] = {}
+    for tipo, seg in zip(seg_tipo, segments, strict=True):
+        blocks.setdefault(tipo, seg)   # the first real block for a tipo wins
+    return blocks
 
 
 def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
@@ -401,24 +459,12 @@ def _read_banded(text: str, tipo: int | None) -> dict[int, str | None]:
     """
     if not tipo:
         raise GridError("style 'banded' requires a tipo")
-    heads = _block_headings(text)
-    wanted = [h for h in heads if int(h.group(1)) == tipo]
-    if not wanted:
+    band_pairs = _tipo_blocks(text).get(tipo)
+    if not band_pairs:
         raise GridError(f"no heading found for tipo {tipo}")
-    start = wanted[0].end()          # the first match for the requested tipo
-    later = [h for h in heads if h.start() > start]
-    end = later[0].start() if later else len(text)   # the next block heading, any tipo
-    block = text[start:end]
 
-    lines = block.splitlines()
     grid: dict[int, str | None] = {}
-    for i, line in enumerate(lines):
-        if not _BAND_HEAD_ROW.match(line) or i + 1 >= len(lines):
-            continue
-        if not _BAND_ANSWER_ROW.match(lines[i + 1]):
-            continue
-        numbers = line.split()
-        verdicts = lines[i + 1].split()
+    for numbers, verdicts in band_pairs:
         if len(numbers) != len(verdicts):
             raise GridError(
                 f"misaligned band for tipo {tipo}: "

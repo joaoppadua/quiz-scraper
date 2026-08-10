@@ -545,11 +545,12 @@ def test_banded_a_coincidental_head_row_with_no_valid_answer_does_not_end_the_bl
     all-integer row that happens to start at 1 ("1 6 11 16 21") purely by
     coincidence, whose own next line ("P Q R S T") is not answer-shaped at all
     — round-1's check accepted this as "restarts at 1" and truncated the block
-    anyway. `_restarts_at_item_one` now requires a full genuine pair (head row
-    *and* a conforming answer row beneath it), so the coincidental row is
-    skipped and scanning continues to the real pair ("6 7 8 9 10" / "A B C D
-    E"), which does not restart at 1 — the stray note is still correctly
-    rejected as a boundary, and Tipo 1 recovers all 10 items."""
+    anyway. The whole-file parse (`_tipo_blocks`, fix-round-3) only ever
+    assembles a pair from a head row *and* a conforming answer row beneath it
+    (`_band_pairs`), so the coincidental row never becomes a pair at all;
+    scanning finds the real pair ("6 7 8 9 10" / "A B C D E") instead, which
+    does not restart at 1 — the stray note is still correctly not a block
+    start of its own, and Tipo 1 recovers all 10 items."""
     text = (
         "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n"
         "Nota: revisado conforme edital da prova tipo 1.\n"
@@ -562,6 +563,55 @@ def test_banded_a_coincidental_head_row_with_no_valid_answer_does_not_end_the_bl
     assert grid == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A", 7: "B", 8: "C", 9: "D", 10: "E"}
     grid2 = read_grid(text, style="banded", tipo=2)
     assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B", 7: "C", 8: "D", 9: "E", 10: "A"}
+
+
+def test_banded_a_genuine_pair_split_by_page_furniture_still_starts_its_own_block():
+    """Fix-round-3, Critical regression introduced by fix-round-2. Round 2's
+    `_restarts_at_item_one` required a head row and its answer row to be the
+    *very next* line, with nothing between them. A genuine Tipo 2 heading whose
+    head row and answer row are split by one ordinary page-furniture line (a
+    running head at a page break — real, since tipo headings sit at page
+    breaks) then looked, from round 2's code, like it had no pair of its own
+    at all; the boundary-detection scan walked straight past the real Tipo 2
+    heading and found Tipo 1's *own trailing* pair instead, which is what
+    caused this to reproduce as silent cross-tipo content contamination
+    (count stays correct, content is wrong) rather than a raised error.
+    `_band_pairs` now tolerates furniture between a head row and its answer
+    row — the same tolerance the boundary check and the actual read share, so
+    they cannot drift apart again — so Tipo 2's own pair is found correctly
+    and it starts its own block."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\nPagina 2\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    grid1 = read_grid(text, style="banded", tipo=1)
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid1 == {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "A", 7: "B", 8: "C", 9: "D", 10: "E"}
+    assert len(grid2) == 10
+    assert grid2 == {1: "B", 2: "C", 3: "D", 4: "E", 5: "A", 6: "B", 7: "C", 8: "D", 9: "E", 10: "A"}
+
+
+def test_banded_tipo1_never_contains_tipo2s_letters():
+    """The lesson of the fix-round-3 regression, asserted directly: a scoping
+    bug can leave the *entry count* looking correct while the *content* is
+    wrong (Tipo 2's letters merged into Tipo 1's grid). Asserting only `len`
+    would have passed on the regressed code, since it also returned 10 entries
+    for Tipo 1 — just the wrong 10. This asserts on content: none of Tipo 1's
+    recovered letters may equal what Tipo 2 actually holds at the same item
+    unless the two tipos genuinely agree there, and at least one item where
+    they must disagree (item 6, by construction of the fixture below) is
+    checked explicitly."""
+    text = (
+        "PROVA TIPO 1\n1 2 3 4 5\nA B C D E\n6 7 8 9 10\nA B C D E\n"
+        "PROVA TIPO 2\n1 2 3 4 5\nPagina 2\nB C D E A\n6 7 8 9 10\nB C D E A\n"
+    )
+    grid1 = read_grid(text, style="banded", tipo=1)
+    grid2 = read_grid(text, style="banded", tipo=2)
+    assert grid1[6] == "A"
+    assert grid2[6] == "B"
+    assert grid1[6] != grid2[6]
+    for item in range(1, 11):
+        assert grid1[item] != grid2[item], f"tipo 1 item {item} leaked tipo 2's letter"
 
 
 # ---- banded: the second real spelling, plus the correspondência table trap -
