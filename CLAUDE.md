@@ -11,7 +11,7 @@ class** — it shortlists, the professor chooses.
 
 ```bash
 uv sync --extra dev
-uv run pytest                     # 431 tests, ~8s, no network and no LLM
+uv run pytest                     # 431 tests, ~5s, no network and no LLM
 uv run ruff check .
 uv run bqpp stats                 # corpus counts + per-subtopic coverage
 uv run bqpp harvest | parse | classify | vet | curate --semester 2026.2
