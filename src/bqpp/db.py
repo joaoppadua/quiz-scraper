@@ -65,10 +65,12 @@ class Database:
         return cls(conn)
 
     # Columns added after a milestone shipped. SQLite's ADD COLUMN is O(1), rewrites
-    # nothing and defaults existing rows to NULL, so this is safe against the live
-    # corpus — whose usage_log is the only record of what was actually taught.
+    # nothing, and backfills existing rows with the declared DEFAULT — NULL for a bare
+    # TEXT column, 0 for `INTEGER DEFAULT 0` — so this is safe against the live corpus —
+    # whose usage_log is the only record of what was actually taught.
     MIGRATIONS: tuple[tuple[str, str, str], ...] = (
         ("questions", "stem_context", "TEXT"),
+        ("questions", "answer_key_provisional", "INTEGER DEFAULT 0"),
     )
 
     def init_schema(self) -> None:
@@ -124,14 +126,14 @@ class Database:
         self.conn.execute(
             "INSERT OR REPLACE INTO questions "
             "(id, source_doc_id, question_number, format, stem, stem_context, choices, answer_key, "
-            " answer_rationale, nullified, discipline, subtopic_ids, difficulty, classified_note, "
-            " classify_model, classified_at, vet_status, vet_reasons, pedagogy_note, vet_model, "
-            " vetted_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " answer_key_provisional, answer_rationale, nullified, discipline, subtopic_ids, "
+            " difficulty, classified_note, classify_model, classified_at, vet_status, vet_reasons, "
+            " pedagogy_note, vet_model, vetted_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (q.id, q.source_doc_id, q.question_number, q.format, q.stem, q.stem_context,
              json.dumps(q.choices, ensure_ascii=False) if q.choices else None,
-             q.answer_key, q.answer_rationale, int(q.nullified), q.discipline,
-             json.dumps(q.subtopic_ids), q.difficulty, q.classified_note,
+             q.answer_key, int(q.answer_key_provisional), q.answer_rationale, int(q.nullified),
+             q.discipline, json.dumps(q.subtopic_ids), q.difficulty, q.classified_note,
              q.classify_model, q.classified_at, q.vet_status,
              json.dumps([r.model_dump() for r in q.vet_reasons], ensure_ascii=False),
              q.pedagogy_note, q.vet_model, q.vetted_at),
@@ -219,7 +221,9 @@ class Database:
             question_number=row["question_number"], format=row["format"], stem=row["stem"],
             stem_context=row["stem_context"],
             choices=json.loads(row["choices"]) if row["choices"] else None,
-            answer_key=row["answer_key"], answer_rationale=row["answer_rationale"],
+            answer_key=row["answer_key"],
+            answer_key_provisional=bool(row["answer_key_provisional"]),
+            answer_rationale=row["answer_rationale"],
             nullified=bool(row["nullified"]), discipline=row["discipline"],
             subtopic_ids=json.loads(row["subtopic_ids"]) if row["subtopic_ids"] else [],
             difficulty=row["difficulty"], classified_note=row["classified_note"],

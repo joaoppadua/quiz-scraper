@@ -83,6 +83,10 @@ class Question(BaseModel):
     stem_context: str | None = None
     choices: list[dict[str, str]] | None = None
     answer_key: str | None = None
+    # Some bancas publish a preliminary key that recursos (appeals) can still overturn.
+    # The corpus stores such a question normally but marks it so vetting can surface
+    # the exposure to the professor instead of passing it off as settled fact.
+    answer_key_provisional: bool = False
     answer_rationale: str | None = None
     nullified: bool = False
     # classification stage

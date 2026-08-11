@@ -145,3 +145,43 @@ def test_a_caller_that_supplies_a_classification_still_wins(tmp_path):
     q = db.get_question("q1")
     assert q.subtopic_ids == ["T3.3"] and q.classify_model == "manual"
     db.close()
+
+
+def test_answer_key_provisional_survives_a_force_reingest_both_directions(tmp_path):
+    """`answer_key_provisional` is not in `_STAGE_COLUMNS`, so `INSERT OR REPLACE` must
+    overwrite it on `force=True` exactly as it does `stem_context` and `answer_key` —
+    never carry the old value forward. A stale True after the key goes definitivo would
+    keep an undeserved warning banner; a stale False after a re-harvest revealed the key
+    is still preliminary would hide a real one. Pin both directions so a future edit to
+    `_STAGE_COLUMNS` or `_carry_stage_fields` that starts carrying this field forward
+    breaks a test instead of silently corrupting the corpus."""
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset")
+    )
+
+    # True -> False: a preliminary key that became definitivo on re-harvest.
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="mcq4", stem="a",
+                 answer_key_provisional=True)
+    )
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="mcq4", stem="b",
+                 answer_key_provisional=False),
+        force=True,
+    )
+    assert db.get_question("q1").answer_key_provisional is False
+
+    # False -> True: the inverse, a re-harvest that reveals the key is still preliminary.
+    db.upsert_question(
+        Question(id="q2", source_doc_id="d1", format="mcq4", stem="a",
+                 answer_key_provisional=False)
+    )
+    db.upsert_question(
+        Question(id="q2", source_doc_id="d1", format="mcq4", stem="b",
+                 answer_key_provisional=True),
+        force=True,
+    )
+    assert db.get_question("q2").answer_key_provisional is True
+    db.close()

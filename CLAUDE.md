@@ -11,7 +11,7 @@ class** — it shortlists, the professor chooses.
 
 ```bash
 uv sync --extra dev
-uv run pytest                     # 171 tests, ~8s, no network and no LLM
+uv run pytest                     # 431 tests, ~8s, no network and no LLM
 uv run ruff check .
 uv run bqpp stats                 # corpus counts + per-subtopic coverage
 uv run bqpp harvest | parse | classify | vet | curate --semester 2026.2
@@ -29,16 +29,28 @@ and `--limit N` when exercising them by hand.
 | **M1** HF bootstrap | ✅ | `eduagarcia/oab_exams` + `maritaca-ai/oab-bench` → 207 questions, 19/21 subtopics |
 | **M2** OAB 2ª-fase padrões | ✅ | `oab_site` adapter + padrão segmenter → 139 discursivas/peças with banca rationale |
 | **M3** Cebraspe + curated provas | ✅ | `stem_context` migration, column extraction, 4 bancas, 829 questions |
-| **M2.5** 1ª-fase provas | ⬜ | two-column reflow; deferred — MCQ ranks lowest for this method |
+| **M2.5** 1ª-fase provas | ✅ | OAB 1ª fase 2019–2026, Tipo 1: banded grid reader, per-source item anchor + furniture, keyword gate → **405 `mcq4` items, corpus 1222** |
 | **Source widening** | ⬜ | more official sources; needs its own recon |
 | **M4** polish | ⬜ | carreira-diversity ranking, per-semester stats, JSONL round-trip test |
 
-**T3.3** stays empty by design — doctrinal topics objective exams avoid. The professor
-opens it from doctrine — it is marked `opens_with: doutrina` in `config/taxonomy.yaml`, and neither
-`stats` nor `curate` treats it as a gap. ~770 questions searched, zero standards-of-proof hits.
+**T3.3** is opened from doctrine, not from a question. It is marked `opens_with: doutrina` in
+`config/taxonomy.yaml`, and neither `stats` nor `curate` treats it as a gap — that is the design
+decision, and it stands whatever the corpus holds. It is no longer *empty*: M2.5 brought it to 3
+candidates (2 Cebraspe `certo_errado` + 1 OAB `mcq4`) out of 1222 questions searched, so
+`render_shortlist` now prints the normal candidate list rather than the "opens by doutrina"
+message. Objective exams still barely touch standards of proof; three hits in 1222 is why the
+subtopic is not sourced from them.
+
+M2.5 shipped despite `[ranking]` putting `mcq4` at the floor weight of 1.0 — which was the stated
+reason for deferring it. The payoff is depth in the thinnest subtopics, not headline count, and the
+professor confirmed the trade before Task 1. Whether the weight should now change is a domain call,
+untouched here.
 
 The M2 plan and its spec-amendment table, all verified against live sources, are in
-`docs/superpowers/plans/2026-08-08-banco-questoes-pp-m2.md`.
+`docs/superpowers/plans/2026-08-08-banco-questoes-pp-m2.md`. The M2.5 plan
+(`…/2026-08-09-banco-questoes-pp-m2.5.md`) carries the same for the 1ª fase, plus a **§ Defect
+history** the shipped code and tests cite by name: read it before loosening any guard in
+`parse/objetiva.py` or `harvest/oab_1f.py`.
 
 ## Architecture invariants
 
@@ -108,10 +120,14 @@ Violating one of these is a bug even if the tests pass.
 
 ## Layout notes
 
-- `docs/superpowers/plans/` holds the implementation plans. `2026-08-05-banco-questoes-pp-m0-m1.md`
-  and `2026-08-08-banco-questoes-pp-m2.md` are the model to follow: global constraints, a
-  **spec-amendments table verified against live sources**, then TDD tasks with explicit file lists
-  and interfaces. Write the next milestone's plan the same way.
+- `docs/superpowers/plans/` holds the implementation plans. `2026-08-05-banco-questoes-pp-m0-m1.md`,
+  `2026-08-08-banco-questoes-pp-m2.md` and `2026-08-09-banco-questoes-pp-m2.5.md` are the model to
+  follow: global constraints, a **spec-amendments table verified against live sources**, then TDD
+  tasks with explicit file lists and interfaces. The M2.5 one adds the two sections that made it
+  survive its own review — a **Result** section measured against the definition of done, and a
+  **Defect history** naming what each fix round found. Write the next milestone's plan the same way,
+  and keep the durable record in the plan: `.superpowers/` is git-ignored and does not survive a
+  clone.
 - `data/` is gitignored (raw PDFs, `corpus.sqlite`, JSONL export). **`data/corpus.sqlite` holds the
   usage log — the only record of what was actually taught. Never delete it casually; it is not
   reconstructible from the sources.**

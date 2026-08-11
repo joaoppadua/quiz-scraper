@@ -189,3 +189,145 @@ def test_context_in_its_own_column_keeps_sibling_items_distinct(tmp_path):
     separate = {stem_hash(i) for i in items}
     assert len(prefixed) == 1, "prefixing collapses the block to one hash — the bug"
     assert len(separate) == 3, "a separate column keeps the items distinct"
+
+
+# The questions table exactly as M3 shipped it: stem_context present,
+# answer_key_provisional not yet added. This is the project's second migration.
+M3_SCHEMA = """
+CREATE TABLE IF NOT EXISTS source_documents (
+  id TEXT PRIMARY KEY, source_id TEXT NOT NULL, url TEXT NOT NULL,
+  fetched_at TEXT NOT NULL, kind TEXT NOT NULL, banca TEXT, carreira TEXT,
+  certame TEXT, exam_year INTEGER, local_path TEXT
+);
+CREATE TABLE IF NOT EXISTS questions (
+  id TEXT PRIMARY KEY,
+  source_doc_id TEXT NOT NULL REFERENCES source_documents(id),
+  question_number TEXT, format TEXT NOT NULL, stem TEXT NOT NULL,
+  stem_context TEXT, choices TEXT, answer_key TEXT, answer_rationale TEXT,
+  nullified INTEGER DEFAULT 0,
+  discipline TEXT, subtopic_ids TEXT, difficulty TEXT, classified_note TEXT,
+  classify_model TEXT, classified_at TEXT,
+  vet_status TEXT DEFAULT 'unvetted', vet_reasons TEXT, pedagogy_note TEXT,
+  vet_model TEXT, vetted_at TEXT
+);
+CREATE TABLE IF NOT EXISTS usage_log (
+  question_id TEXT REFERENCES questions(id), semester TEXT NOT NULL,
+  subtopic_id TEXT NOT NULL, used_at TEXT, note TEXT,
+  PRIMARY KEY (question_id, semester)
+);
+"""
+
+
+@pytest.fixture
+def m3_database(tmp_path):
+    """A database as it existed after M3, carrying a question and a usage-log row,
+    before the answer_key_provisional migration."""
+    path = tmp_path / "m3.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(M3_SCHEMA)
+    conn.execute(
+        "INSERT INTO source_documents VALUES "
+        "('d1','cebraspe-cadernos','https://cdn.cebraspe.org.br/x.pdf','t',"
+        "'gabarito_justificado','CEBRASPE','delegado','PC/DF Delegado 2026',2026,NULL)"
+    )
+    conn.execute(
+        "INSERT INTO questions (id, source_doc_id, question_number, format, stem, "
+        "stem_context, answer_key, discipline, subtopic_ids, classify_model, classified_at, "
+        "vet_status, pedagogy_note) VALUES "
+        "('q1','d1','1','certo_errado','item antigo','comando antigo','C',"
+        "'direito-processual-penal','[\"T2.4\"]','gemini','2026-08-08','flagged','nota')"
+    )
+    conn.execute(
+        "INSERT INTO usage_log VALUES ('q1','2026.2','T2.4','2026-08-08','abriu a aula')"
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_second_migration_adds_the_column(m3_database):
+    db = Database.connect(m3_database)
+    assert "answer_key_provisional" not in {
+        r[1] for r in db.conn.execute("PRAGMA table_info(questions)")
+    }
+    db.init_schema()
+    assert "answer_key_provisional" in {
+        r[1] for r in db.conn.execute("PRAGMA table_info(questions)")
+    }
+    db.close()
+
+
+def test_second_migration_preserves_every_existing_question(m3_database):
+    db = Database.connect(m3_database)
+    db.init_schema()
+    q = db.get_question("q1")
+    assert q is not None
+    assert q.stem == "item antigo"
+    assert q.stem_context == "comando antigo"
+    assert q.answer_key == "C"
+    assert q.subtopic_ids == ["T2.4"]
+    assert q.vet_status == "flagged"
+    assert q.pedagogy_note == "nota"
+    assert q.answer_key_provisional is False, "existing rows default to False"
+    db.close()
+
+
+def test_second_migration_preserves_the_usage_log(m3_database):
+    """The one table that cannot be rebuilt from any source."""
+    db = Database.connect(m3_database)
+    db.init_schema()
+    entries = db.usage_entries()
+    assert len(entries) == 1
+    assert entries[0].question_id == "q1"
+    assert entries[0].note == "abriu a aula"
+    db.close()
+
+
+def test_second_migration_is_idempotent(m3_database):
+    db = Database.connect(m3_database)
+    db.init_schema()
+    db.init_schema()
+    db.init_schema()
+    cols = [r[1] for r in db.conn.execute("PRAGMA table_info(questions)")]
+    assert cols.count("answer_key_provisional") == 1
+    db.close()
+
+
+def test_answer_key_provisional_round_trips(tmp_path):
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset")
+    )
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="mcq4", stem="item",
+                 answer_key_provisional=True)
+    )
+    assert db.get_question("q1").answer_key_provisional is True
+    db.close()
+
+
+def test_answer_key_provisional_defaults_false_on_fresh_rows(tmp_path):
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset")
+    )
+    db.upsert_question(Question(id="q1", source_doc_id="d1", format="mcq4", stem="item"))
+    assert db.get_question("q1").answer_key_provisional is False
+    db.close()
+
+
+def test_answer_key_provisional_round_trips_through_iter_questions(tmp_path):
+    db = Database.connect(tmp_path / "t.sqlite")
+    db.init_schema()
+    db.upsert_source_document(
+        SourceDocument(id="d1", source_id="s", url="u", fetched_at="t", kind="dataset")
+    )
+    db.upsert_question(
+        Question(id="q1", source_doc_id="d1", format="mcq4", stem="item",
+                 answer_key_provisional=True)
+    )
+    got = next(db.iter_questions())
+    assert got.answer_key_provisional is True
+    db.close()
